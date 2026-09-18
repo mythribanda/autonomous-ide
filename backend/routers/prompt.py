@@ -48,7 +48,7 @@ async def compile_prompt(
                 except Exception:
                     pass
 
-    return prompt_compiler.compile(
+    return prompt_compiler.compile_specification(
         raw_prompt=req.prompt,
         project_name=project_name,
         project_language=project_lang,

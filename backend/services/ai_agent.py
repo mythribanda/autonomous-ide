@@ -58,6 +58,24 @@ class AIAgentManager:
         for ws in stale:
             await self.unregister_subscriber(ws, task_id)
 
+    async def broadcast_raw_event(self, task_id: str, event_payload: Dict[str, Any]):
+        encoded = json.dumps(event_payload)
+
+        # Notify task-specific subscribers
+        subscribers = set(self.task_subscribers.get(task_id, set()))
+        # Notify global subscribers
+        subscribers.update(self.global_subscribers)
+
+        stale = set()
+        for ws in subscribers:
+            try:
+                await ws.send_text(encoded)
+            except Exception:
+                stale.add(ws)
+
+        for ws in stale:
+            await self.unregister_subscriber(ws, task_id)
+
     async def start_execution(self, task_id: str, requirement: str, autonomy_level: str = "autonomous"):
         self.task_states[task_id] = {
             "status": "executing",

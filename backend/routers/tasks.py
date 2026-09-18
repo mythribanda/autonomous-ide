@@ -6,7 +6,7 @@ from sqlalchemy import select
 
 from backend.database import get_db
 from backend.models.project import Project, Task, TaskEvent
-from backend.schemas import TaskCreateRequest, TaskResponse, TaskEventResponse
+from backend.schemas import TaskCreateRequest, TaskResponse, TaskEventResponse, CompiledSpec
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 
@@ -76,3 +76,33 @@ async def get_task_events(task_id: str, db: AsyncSession = Depends(get_db)):
     result = await db.execute(stmt)
     events = result.scalars().all()
     return events
+
+
+@router.get("/{task_id}/spec", response_model=CompiledSpec)
+async def get_task_spec(task_id: str, db: AsyncSession = Depends(get_db)):
+    stmt = select(Task).where(Task.id == task_id)
+    result = await db.execute(stmt)
+    task = result.scalars().first()
+
+    if not task:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Task not found with id: {task_id}",
+        )
+
+    if not task.compiled_spec_json:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Compiled spec not found for task: {task_id}",
+        )
+
+    try:
+        spec = CompiledSpec.model_validate_json(task.compiled_spec_json)
+        spec.task_id = task.id
+        return spec
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to parse stored compiled spec: {str(e)}",
+        )
+

@@ -4,6 +4,7 @@ from pathlib import Path
 
 class Settings(BaseSettings):
     ollama_url: str = "http://localhost:11434"
+    ollama_model: str = "llama3.2:latest"
     db_path: str = "./data/autonomous_ide.db"
     database_url: str = "sqlite+aiosqlite:///./data/autonomous_ide.db"
     workspace_max_file_size_mb: int = 10

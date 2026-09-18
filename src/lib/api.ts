@@ -13,6 +13,8 @@ import {
   AgentExecuteRequest,
   AgentStopRequest,
   AgentStatusResponse,
+  AgentCompileRequest,
+  CompiledSpec,
   Task,
   TaskCreateRequest,
   GitStatusResponse,
@@ -215,6 +217,61 @@ export async function getAgentStatus(taskId: string): Promise<AgentStatusRespons
   });
 }
 
+export async function compileAgentRequirement(req: AgentCompileRequest): Promise<CompiledSpec> {
+  return request<CompiledSpec>('/agent/compile', {
+    method: 'POST',
+    body: JSON.stringify(req)
+  });
+}
+
+export function compileAgentRequirementStream(
+  req: AgentCompileRequest,
+  onEvent: (event: any) => void,
+  onError?: (error: any) => void
+): () => void {
+  const controller = new AbortController();
+  fetch(`${API_BASE_URL}/agent/compile/stream`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(req),
+    signal: controller.signal
+  }).then(async (response) => {
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    const reader = response.body?.getReader();
+    if (!reader) return;
+    const decoder = new TextDecoder();
+    let buffer = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n\n');
+      buffer = lines.pop() || '';
+      for (const block of lines) {
+        const line = block.trim();
+        if (line.startsWith('data: ')) {
+          try {
+            const data = JSON.parse(line.slice(6));
+            onEvent(data);
+          } catch (err) {
+            console.error('Failed to parse SSE JSON:', err);
+          }
+        }
+      }
+    }
+  }).catch((err) => {
+    if (err.name !== 'AbortError' && onError) {
+      onError(err);
+    }
+  });
+
+  return () => controller.abort();
+}
+
 export async function createTask(req: TaskCreateRequest): Promise<Task> {
   return request<Task>('/tasks', {
     method: 'POST',
@@ -224,6 +281,12 @@ export async function createTask(req: TaskCreateRequest): Promise<Task> {
 
 export async function getTask(taskId: string): Promise<Task> {
   return request<Task>(`/tasks/${encodeURIComponent(taskId)}`, {
+    method: 'GET'
+  });
+}
+
+export async function getTaskSpec(taskId: string): Promise<CompiledSpec> {
+  return request<CompiledSpec>(`/tasks/${encodeURIComponent(taskId)}/spec`, {
     method: 'GET'
   });
 }

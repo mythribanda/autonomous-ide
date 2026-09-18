@@ -265,4 +265,37 @@ export interface FileReadResponse {
   size: number;
 }
 
+export interface ImplementationStep {
+  step: number;
+  action: string;
+  file: string;
+  type: 'create' | 'modify' | 'delete' | string;
+}
+
+export interface CompiledSpec {
+  task_id?: string | null;
+  raw_requirement: string;
+  intent: string;
+  intent_category: string;
+  scope: string;
+  explicit_requirements: string[];
+  ambiguities: string[];
+  missing_info: string[];
+  assumptions: string[];
+  implementation_steps: ImplementationStep[];
+  new_files_needed: string[];
+  acceptance_criteria: string[];
+  test_cases: string[];
+  affected_files: string[];
+  impact_report: ImpactReport;
+  confidence_score: number;
+  error?: string | null;
+}
+
+export interface AgentCompileRequest {
+  requirement: string;
+  project_id: string;
+  task_id?: string | null;
+}
+
 

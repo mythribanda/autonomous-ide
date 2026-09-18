@@ -23,6 +23,7 @@ interface AgentState {
   // Actions
   setAutonomyLevel: (level: AutonomyLevel) => void;
   startNewTask: (title: string, autonomyLevel?: AutonomyLevel) => Promise<void>;
+  startExecution: (taskId: string, prompt?: string, autonomyLevel?: AutonomyLevel) => Promise<void>;
   stopAgent: () => Promise<void>;
   pauseAgent: () => void;
   resumeAgent: () => Promise<void>;
@@ -335,6 +336,183 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       const statusRes = await apiExecuteAgent({
         task_id: taskId,
         prompt: title,
+        autonomy_level: currentAutonomy
+      });
+
+      set((state) => ({
+        isLoading: false,
+        currentTask: {
+          ...state.currentTask,
+          status: (statusRes.status as AgentStatus) || state.currentTask.status,
+          progress: Math.max(state.currentTask.progress, Math.round(statusRes.progress * 100))
+        }
+      }));
+    } catch (err: unknown) {
+      const errMsg = err instanceof ApiError ? `[${err.code}] ${err.message}` : (err as Error).message;
+      set((state) => ({
+        isLoading: false,
+        error: errMsg,
+        currentTask: {
+          ...state.currentTask,
+          status: 'error',
+          activities: [
+            {
+              timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+              message: `Execution request error: ${errMsg}`,
+              type: 'error'
+            },
+            ...state.currentTask.activities
+          ]
+        }
+      }));
+    }
+  },
+
+  startExecution: async (taskId: string, prompt?: string, autonomyLevel?: AutonomyLevel) => {
+    const currentAutonomy = autonomyLevel || get().currentTask.autonomyLevel || 'autonomous';
+
+    if (activeWs) {
+      activeWs.disconnect();
+      activeWs = null;
+    }
+
+    const newTask: AgentTask = {
+      id: taskId,
+      title: prompt || 'Autonomous AI Execution',
+      description: `Executing plan for task "${taskId}"`,
+      autonomyLevel: currentAutonomy,
+      status: 'executing',
+      progress: 20,
+      understandings: [
+        `Executing compiled specification for task: ${taskId}`,
+        'Applying planned codebase modifications',
+        'Running verification test suite'
+      ],
+      plan: [
+        { id: 'step-1', title: 'Load compiled specification', description: 'Validate plan steps', status: 'completed' },
+        { id: 'step-2', title: 'Apply code modifications', description: 'Perform file changes', status: 'in_progress' },
+        { id: 'step-3', title: 'Verify and run tests', description: 'Validate modifications', status: 'pending' }
+      ],
+      activities: [
+        {
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+          message: `Execution initiated for task: ${taskId}`,
+          type: 'info'
+        }
+      ]
+    };
+
+    set({
+      currentTask: newTask,
+      isPaused: false,
+      activeToolCall: null,
+      selectedToolCall: null,
+      error: null,
+      isLoading: true
+    });
+
+    const ws = new AgentWebSocket(taskId);
+    activeWs = ws;
+
+    ws.onEvent((event: AgentEvent) => {
+      const timestamp = event.timestamp
+        ? new Date(event.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+        : new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+      set((state) => {
+        if (state.currentTask.id !== taskId) return state;
+
+        const updatedActivities = [...state.currentTask.activities];
+        let updatedStatus: AgentStatus = state.currentTask.status;
+        let updatedProgress = state.currentTask.progress;
+        let updatedPlan = [...state.currentTask.plan];
+        let updatedActiveTool = state.activeToolCall;
+
+        switch (event.type) {
+          case 'TASK_STARTED': {
+            updatedStatus = 'executing';
+            updatedProgress = Math.max(updatedProgress, 25);
+            updatedActivities.unshift({ timestamp, message: event.message, type: 'info' });
+            break;
+          }
+          case 'PLAN_GENERATED': {
+            updatedProgress = Math.max(updatedProgress, 40);
+            if (event.data && Array.isArray(event.data.steps)) {
+              updatedPlan = event.data.steps.map((stepName: string, idx: number) => ({
+                id: `step-${idx + 1}`,
+                title: stepName,
+                description: `Phase ${idx + 1} execution step`,
+                status: idx === 0 ? 'completed' : idx === 1 ? 'in_progress' : 'pending'
+              }));
+            }
+            updatedActivities.unshift({ timestamp, message: event.message, type: 'info' });
+            break;
+          }
+          case 'TOOL_CALL': {
+            updatedProgress = Math.max(updatedProgress, 75);
+            const toolType = (event.data?.tool as ToolType) || 'WRITE_FILE';
+            const toolCall: ToolCall = {
+              id: `tc-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+              type: toolType,
+              target: event.data?.target || event.data?.file || 'workspace',
+              timestamp,
+              status: event.data?.status === 'failed' ? 'failed' : 'success',
+              summary: event.message,
+              detail: event.data?.detail,
+              diff: event.data?.diff,
+              output: event.data?.output
+            };
+            updatedActiveTool = toolCall;
+            updatedActivities.unshift({ timestamp, message: event.message, type: 'tool', toolCall });
+            break;
+          }
+          case 'TASK_COMPLETED': {
+            updatedStatus = 'completed';
+            updatedProgress = 100;
+            updatedActiveTool = null;
+            updatedPlan = updatedPlan.map((p) => ({ ...p, status: 'completed' as const }));
+            updatedActivities.unshift({ timestamp, message: event.message, type: 'success' });
+            break;
+          }
+          case 'TASK_STOPPED': {
+            updatedStatus = 'idle';
+            updatedActiveTool = null;
+            updatedActivities.unshift({ timestamp, message: event.message, type: 'warning' });
+            break;
+          }
+          case 'TASK_ERROR': {
+            updatedStatus = 'error';
+            updatedActiveTool = null;
+            updatedActivities.unshift({ timestamp, message: event.message, type: 'error' });
+            break;
+          }
+          default: {
+            if (event.message) {
+              updatedActivities.unshift({ timestamp, message: event.message, type: 'info' });
+            }
+            break;
+          }
+        }
+
+        return {
+          currentTask: {
+            ...state.currentTask,
+            status: updatedStatus,
+            progress: updatedProgress,
+            plan: updatedPlan,
+            activities: updatedActivities
+          },
+          activeToolCall: updatedActiveTool
+        };
+      });
+    });
+
+    ws.connect();
+
+    try {
+      const statusRes = await apiExecuteAgent({
+        task_id: taskId,
+        prompt: prompt,
         autonomy_level: currentAutonomy
       });
 

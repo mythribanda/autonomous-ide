@@ -182,6 +182,36 @@ class AgentStatusResponse(BaseModel):
     progress: float
     current_activity: Optional[str] = None
 
+class ImplementationStep(BaseModel):
+    step: int
+    action: str
+    file: str
+    type: str  # "create" | "modify" | "delete"
+
+class CompiledSpec(BaseModel):
+    task_id: Optional[str] = None
+    raw_requirement: str
+    intent: str
+    intent_category: str
+    scope: str
+    explicit_requirements: List[str] = Field(default_factory=list)
+    ambiguities: List[str] = Field(default_factory=list)
+    missing_info: List[str] = Field(default_factory=list)
+    assumptions: List[str] = Field(default_factory=list)
+    implementation_steps: List[ImplementationStep] = Field(default_factory=list)
+    new_files_needed: List[str] = Field(default_factory=list)
+    acceptance_criteria: List[str] = Field(default_factory=list)
+    test_cases: List[str] = Field(default_factory=list)
+    affected_files: List[str] = Field(default_factory=list)
+    impact_report: ImpactReport
+    confidence_score: float
+    error: Optional[str] = None
+
+class AgentCompileRequest(BaseModel):
+    requirement: str
+    project_id: str
+    task_id: Optional[str] = None
+
 # Filesystem
 class FileItem(BaseModel):
     name: str

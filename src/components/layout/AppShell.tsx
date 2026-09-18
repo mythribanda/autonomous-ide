@@ -18,6 +18,7 @@ import { WelcomeScreen } from '../welcome/WelcomeScreen';
 import { SettingsModal } from '../settings/SettingsModal';
 import { CommandPalette } from '../common/CommandPalette';
 import { ToastContainer } from '../common/Toast';
+import { PromptBar } from '../PromptBar/PromptBar';
 
 export const AppShell: React.FC = () => {
   const {
@@ -77,6 +78,9 @@ export const AppShell: React.FC = () => {
 
         {/* 4. Center Main Content Area */}
         <div className="flex-1 flex flex-col overflow-hidden min-w-0 bg-[#1E1E1E]">
+          {/* Prompt Bar & Inline Compiler Panel */}
+          <PromptBar />
+
           <div className="flex-1 flex overflow-hidden min-h-0">
             {renderMainContent()}
           </div>
