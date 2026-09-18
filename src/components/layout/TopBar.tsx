@@ -17,7 +17,7 @@ import {
 import { Badge } from '../common/Badge';
 
 export const TopBar: React.FC = () => {
-  const { currentProject, setProject } = useProjectStore();
+  const { currentProject, setProject, openProjectWithDialog } = useProjectStore();
   const { settings, openSettings } = useSettingsStore();
   const { setCommandPaletteOpen, addToast } = useUIStore();
   const { currentBranch } = useGitStore();
@@ -88,6 +88,19 @@ export const TopBar: React.FC = () => {
                   {p.name === currentProject && <Check size={14} className="text-[#FFFFFF]" />}
                 </button>
               ))}
+
+              <div className="pt-1 mt-1 border-t border-[#2B2B2B]">
+                <button
+                  onClick={async () => {
+                    setProjectDropdownOpen(false);
+                    await openProjectWithDialog();
+                  }}
+                  className="w-full text-left px-3 py-1.5 text-xs text-[#58A6FF] hover:bg-[#2A2D2E] flex items-center gap-2 transition-colors font-medium"
+                >
+                  <FolderGit2 size={13} />
+                  <span>Open Folder from Disk...</span>
+                </button>
+              </div>
             </div>
           )}
         </div>

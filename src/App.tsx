@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { AppShell } from './components/layout/AppShell';
 import { useConnectionStore } from './store/connectionStore';
+import { ProjectOpenProgressModal } from './components/ProjectIntelligence/ProjectOpenProgressModal';
 
 export function App() {
   const {
@@ -47,6 +48,9 @@ export function App() {
       <div className="flex-1 min-h-0 relative overflow-hidden">
         <AppShell />
       </div>
+
+      {/* Project Opening & Intelligence Progress Modal */}
+      <ProjectOpenProgressModal />
 
       {/* Bottom Connection Status Indicator Bar */}
       <div className="h-6 bg-[#181818] border-t border-[#2D2D2D] px-3 flex items-center justify-between text-[11px] font-sans select-none text-[#AAAAAA] z-30 shrink-0">

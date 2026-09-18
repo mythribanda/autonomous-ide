@@ -1,7 +1,13 @@
 import {
   Project,
   HealthResponse,
-  OllamaHealthResponse
+  OllamaHealthResponse,
+  AnalysisJobResponse,
+  ProjectAnalysis,
+  KnowledgeGraphResult,
+  FileContext,
+  ProjectSummaryResponse,
+  ImpactReport
 } from '../types/api';
 
 export class ApiError extends Error {
@@ -100,5 +106,46 @@ export async function getHealth(): Promise<HealthResponse> {
 export async function getOllamaHealth(): Promise<OllamaHealthResponse> {
   return request<OllamaHealthResponse>('/health/ollama', {
     method: 'GET'
+  });
+}
+
+export async function analyzeProject(projectId: string, wait: boolean = true): Promise<AnalysisJobResponse> {
+  return request<AnalysisJobResponse>(`/projects/${encodeURIComponent(projectId)}/analyze?wait=${wait}`, {
+    method: 'POST'
+  });
+}
+
+export async function getProjectAnalysis(projectId: string): Promise<ProjectAnalysis> {
+  return request<ProjectAnalysis>(`/projects/${encodeURIComponent(projectId)}/analysis`, {
+    method: 'GET'
+  });
+}
+
+export async function buildKnowledgeGraph(projectId: string, rebuild: boolean = true): Promise<KnowledgeGraphResult> {
+  return request<KnowledgeGraphResult>(`/projects/${encodeURIComponent(projectId)}/knowledge-graph?rebuild=${rebuild}`, {
+    method: 'POST'
+  });
+}
+
+export async function getProjectContext(projectId: string, requirement: string, maxFiles: number = 8): Promise<FileContext[]> {
+  const params = new URLSearchParams({
+    requirement,
+    max_files: String(maxFiles)
+  });
+  return request<FileContext[]>(`/projects/${encodeURIComponent(projectId)}/context?${params.toString()}`, {
+    method: 'GET'
+  });
+}
+
+export async function getProjectSummary(projectId: string): Promise<ProjectSummaryResponse> {
+  return request<ProjectSummaryResponse>(`/projects/${encodeURIComponent(projectId)}/summary`, {
+    method: 'GET'
+  });
+}
+
+export async function getImpactAnalysis(projectId: string, requirement: string): Promise<ImpactReport> {
+  return request<ImpactReport>(`/projects/${encodeURIComponent(projectId)}/impact`, {
+    method: 'POST',
+    body: JSON.stringify({ requirement })
   });
 }

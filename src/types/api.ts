@@ -7,6 +7,7 @@ export interface Project {
   last_opened: string;
   created_at: string;
   config_json?: string | null;
+  scan_result?: ProjectScanResult | null;
 }
 
 export interface ProjectOpenRequest {
@@ -101,3 +102,76 @@ export interface ApiErrorData {
 
 export type BackendStatus = 'connecting' | 'connected' | 'error';
 export type OllamaStatus = 'connecting' | 'connected' | 'error' | 'unavailable';
+
+export interface ProjectScanResult {
+  languages: string[];
+  frameworks: string[];
+  package_manager?: string | null;
+  entry_points: string[];
+  config_files: Record<string, string>;
+  test_framework?: string | null;
+  has_docker: boolean;
+  has_git: boolean;
+  has_ci: boolean;
+  file_count: number;
+  directory_structure: Record<string, any>;
+  detected_database?: string | null;
+  api_style?: string | null;
+}
+
+export interface GraphNode {
+  id: string;
+  type: 'file' | 'function' | 'class' | 'component' | 'api_route' | 'database_model' | string;
+  name: string;
+  file_path: string;
+  metadata?: Record<string, any>;
+}
+
+export interface GraphEdge {
+  from_id: string;
+  to_id: string;
+  type: 'imports' | 'calls' | 'extends' | 'renders' | 'depends_on' | 'defines_route' | 'defines' | string;
+}
+
+export interface KnowledgeGraphResult {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  summary: string;
+}
+
+export interface FileContext {
+  file_path: string;
+  relevance_score: number;
+  content_snippet: string;
+  reason: string;
+}
+
+export interface ProjectSummaryResponse {
+  summary: string;
+}
+
+export interface ImpactReport {
+  directly_affected_files: string[];
+  transitively_affected_files: string[];
+  affected_api_routes: string[];
+  affected_components: string[];
+  affected_database_models: string[];
+  tests_to_run: string[];
+  risk_level: 'low' | 'medium' | 'high';
+  risk_reasons: string[];
+  estimated_files_to_change: number;
+}
+
+export interface AnalysisJobResponse {
+  project_id: string;
+  status: string;
+  message: string;
+  files_count: number;
+}
+
+export interface ProjectAnalysis {
+  files: any[];
+  total_functions: number;
+  total_classes: number;
+  component_tree: Record<string, string[]>;
+}
