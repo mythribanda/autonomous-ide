@@ -72,7 +72,42 @@ export interface AgentEvent {
   task_id?: string;
 }
 
-export interface GitCheckpoint {
+export interface AgentExecuteRequest {
+  task_id: string;
+  prompt?: string | null;
+  autonomy_level?: string | null;
+  target_files?: string[] | null;
+}
+
+export interface AgentStopRequest {
+  task_id: string;
+}
+
+export interface AgentStatusResponse {
+  task_id: string;
+  status: string;
+  progress: number;
+  current_activity?: string | null;
+}
+
+export interface GitStatusResponse {
+  project_path: string;
+  branch: string;
+  is_clean: boolean;
+  modified_files: string[];
+  untracked_files: string[];
+  staged_files: string[];
+}
+
+export interface GitCheckpointRequest {
+  project_id: string;
+  project_path: string;
+  message: string;
+  type?: string | null;
+  author?: string | null;
+}
+
+export interface GitCheckpointResponse {
   id: string;
   commit_hash: string;
   branch: string;
@@ -81,6 +116,24 @@ export interface GitCheckpoint {
   type: string;
   files_changed: number;
   created_at: string;
+}
+
+export type GitCheckpoint = GitCheckpointResponse;
+
+export interface GitRollbackRequest {
+  project_path: string;
+  commit_hash: string;
+}
+
+export interface GitRollbackResponse {
+  success: boolean;
+  message: string;
+}
+
+export interface GitDiffResponse {
+  project_path: string;
+  file_path?: string | null;
+  diff: string;
 }
 
 export interface HealthResponse {
@@ -175,3 +228,22 @@ export interface ProjectAnalysis {
   total_classes: number;
   component_tree: Record<string, string[]>;
 }
+
+export interface TerminalExecuteRequest {
+  command: string;
+  cwd?: string | null;
+  timeout_seconds?: number;
+}
+
+export interface TerminalExecuteResponse {
+  stdout: string;
+  stderr: string;
+  exit_code: number;
+  duration_ms: number;
+}
+
+export interface PromptCompileRequest {
+  prompt: string;
+  project_id?: string | null;
+}
+

@@ -82,4 +82,24 @@ class GitService:
         except Exception as e:
             raise RuntimeError(f"Rollback failed: {str(e)}")
 
+    def get_diff(self, project_path: str, file_path: Optional[str] = None) -> str:
+        repo = self._get_repo(project_path)
+        if not repo:
+            return ""
+        try:
+            if file_path:
+                if repo.head.is_valid():
+                    diff = repo.git.diff("HEAD", file_path)
+                else:
+                    diff = repo.git.diff(file_path)
+                if not diff:
+                    diff = repo.git.diff(file_path)
+                return diff
+            return repo.git.diff("HEAD") if repo.head.is_valid() else repo.git.diff()
+        except Exception:
+            try:
+                return repo.git.diff(file_path) if file_path else repo.git.diff()
+            except Exception:
+                return ""
+
 git_service = GitService()

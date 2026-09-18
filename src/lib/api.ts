@@ -7,8 +7,23 @@ import {
   KnowledgeGraphResult,
   FileContext,
   ProjectSummaryResponse,
-  ImpactReport
+  ImpactReport,
+  TerminalExecuteRequest,
+  TerminalExecuteResponse,
+  AgentExecuteRequest,
+  AgentStopRequest,
+  AgentStatusResponse,
+  Task,
+  TaskCreateRequest,
+  GitStatusResponse,
+  GitCheckpointRequest,
+  GitCheckpointResponse,
+  GitRollbackRequest,
+  GitRollbackResponse,
+  GitDiffResponse,
+  PromptCompileRequest
 } from '../types/api';
+import { PromptSpecification } from '../types';
 
 export class ApiError extends Error {
   code: string;
@@ -149,3 +164,111 @@ export async function getImpactAnalysis(projectId: string, requirement: string):
     body: JSON.stringify({ requirement })
   });
 }
+
+export async function terminalExecute(
+  command: string,
+  cwd?: string | null,
+  timeoutSeconds?: number
+): Promise<TerminalExecuteResponse>;
+export async function terminalExecute(
+  request: TerminalExecuteRequest
+): Promise<TerminalExecuteResponse>;
+export async function terminalExecute(
+  commandOrReq: string | TerminalExecuteRequest,
+  cwd?: string | null,
+  timeoutSeconds?: number
+): Promise<TerminalExecuteResponse> {
+  const payload: TerminalExecuteRequest =
+    typeof commandOrReq === 'string'
+      ? {
+          command: commandOrReq,
+          cwd: cwd || undefined,
+          timeout_seconds: timeoutSeconds ?? 60
+        }
+      : commandOrReq;
+
+  return request<TerminalExecuteResponse>('/terminal/execute', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function executeAgent(req: AgentExecuteRequest): Promise<AgentStatusResponse> {
+  return request<AgentStatusResponse>('/agent/execute', {
+    method: 'POST',
+    body: JSON.stringify(req)
+  });
+}
+
+export async function stopAgent(req: AgentStopRequest): Promise<AgentStatusResponse> {
+  return request<AgentStatusResponse>('/agent/stop', {
+    method: 'POST',
+    body: JSON.stringify(req)
+  });
+}
+
+export async function getAgentStatus(taskId: string): Promise<AgentStatusResponse> {
+  return request<AgentStatusResponse>(`/agent/status?task_id=${encodeURIComponent(taskId)}`, {
+    method: 'GET'
+  });
+}
+
+export async function createTask(req: TaskCreateRequest): Promise<Task> {
+  return request<Task>('/tasks', {
+    method: 'POST',
+    body: JSON.stringify(req)
+  });
+}
+
+export async function getTask(taskId: string): Promise<Task> {
+  return request<Task>(`/tasks/${encodeURIComponent(taskId)}`, {
+    method: 'GET'
+  });
+}
+
+export async function getGitStatus(projectPath: string): Promise<GitStatusResponse> {
+  return request<GitStatusResponse>(`/git/status?project_path=${encodeURIComponent(projectPath)}`, {
+    method: 'GET'
+  });
+}
+
+export async function createGitCheckpoint(req: GitCheckpointRequest): Promise<GitCheckpointResponse> {
+  return request<GitCheckpointResponse>('/git/checkpoint', {
+    method: 'POST',
+    body: JSON.stringify(req)
+  });
+}
+
+export async function rollbackGitCheckpoint(req: GitRollbackRequest): Promise<GitRollbackResponse> {
+  return request<GitRollbackResponse>('/git/rollback', {
+    method: 'POST',
+    body: JSON.stringify(req)
+  });
+}
+
+export async function listGitCheckpoints(projectId?: string): Promise<GitCheckpointResponse[]> {
+  const url = projectId
+    ? `/git/checkpoints?project_id=${encodeURIComponent(projectId)}`
+    : '/git/checkpoints';
+  return request<GitCheckpointResponse[]>(url, {
+    method: 'GET'
+  });
+}
+
+export async function getGitDiff(projectPath: string, filePath?: string): Promise<GitDiffResponse> {
+  const params = new URLSearchParams({ project_path: projectPath });
+  if (filePath) {
+    params.append('file_path', filePath);
+  }
+  return request<GitDiffResponse>(`/git/diff?${params.toString()}`, {
+    method: 'GET'
+  });
+}
+
+export async function compilePrompt(req: PromptCompileRequest): Promise<PromptSpecification> {
+  return request<PromptSpecification>('/prompt/compile', {
+    method: 'POST',
+    body: JSON.stringify(req)
+  });
+}
+

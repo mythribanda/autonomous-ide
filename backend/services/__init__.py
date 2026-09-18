@@ -4,6 +4,7 @@ from backend.services.git_service import git_service
 from backend.services.ast_analyzer import ASTAnalyzer, ast_analyzer
 from backend.services.knowledge_graph import KnowledgeGraph, knowledge_graph
 from backend.services.impact_analyzer import ImpactAnalyzer, impact_analyzer
+from backend.services.prompt_compiler import PromptCompiler, prompt_compiler
 
 __all__ = [
     "ProjectScanner",
@@ -16,4 +17,6 @@ __all__ = [
     "knowledge_graph",
     "ImpactAnalyzer",
     "impact_analyzer",
+    "PromptCompiler",
+    "prompt_compiler",
 ]

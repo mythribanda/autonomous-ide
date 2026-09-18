@@ -28,8 +28,8 @@ export const RecoveryTimelineView: React.FC = () => {
               <h1 className="text-base font-bold text-[#FFFFFF] font-mono">
                 SELF-RECOVERY TIMELINE
               </h1>
-              <Badge variant="emerald" size="xs">
-                Autonomous Loop Active
+              <Badge variant="amber" size="xs">
+                Not connected • Simulated Data
               </Badge>
             </div>
             <p className="text-xs text-[#858585] mt-0.5">
@@ -47,6 +47,17 @@ export const RecoveryTimelineView: React.FC = () => {
             <Bot size={13} />
             <span>{isSimulatingRecovery ? 'Diagnosing & Repairing...' : 'Simulate Recovery Loop'}</span>
           </button>
+        </div>
+      </div>
+
+      {/* Not connected notice banner */}
+      <div className="p-3 rounded-sm bg-[#2A2312] border border-[#CCA700]/30 flex items-start gap-2.5 text-[#CCA700]">
+        <AlertTriangle size={15} className="shrink-0 mt-0.5 text-[#CCA700]" />
+        <div className="text-xs space-y-0.5">
+          <div className="font-bold">Self-Recovery Backend Service Not Connected</div>
+          <div className="text-[#CCCCCC]">
+            Autonomous self-healing backend endpoints are not implemented on this branch. Operating with simulated recovery data for demonstration purposes.
+          </div>
         </div>
       </div>
 

@@ -274,3 +274,34 @@ class OllamaHealthResponse(BaseModel):
     connected: bool
     models: List[str] = Field(default_factory=list)
     error: Optional[str] = None
+
+# Prompt Compilation
+class AcceptanceCriteriaItem(BaseModel):
+    id: str
+    text: str
+    completed: bool = False
+
+class TechnicalPlan(BaseModel):
+    frontend: str = ""
+    backend: str = ""
+    database: str = ""
+    testing: str = ""
+    architectureNotes: List[str] = Field(default_factory=list)
+
+class PromptSpecificationResponse(BaseModel):
+    id: str
+    rawPrompt: str
+    title: str
+    qualityScore: int
+    intent: str
+    detectedRequirements: List[str] = Field(default_factory=list)
+    ambiguities: List[str] = Field(default_factory=list)
+    missingInformation: List[str] = Field(default_factory=list)
+    assumptions: List[str] = Field(default_factory=list)
+    technicalPlan: TechnicalPlan = Field(default_factory=TechnicalPlan)
+    acceptanceCriteria: List[AcceptanceCriteriaItem] = Field(default_factory=list)
+
+class PromptCompileRequest(BaseModel):
+    prompt: str
+    project_id: Optional[str] = None
+

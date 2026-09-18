@@ -17,7 +17,8 @@ from backend.routers import (
     filesystem_router,
     terminal_router,
     git_router,
-    health_router
+    health_router,
+    prompt_router
 )
 
 @asynccontextmanager
@@ -94,6 +95,7 @@ app.include_router(filesystem_router, prefix="/api")
 app.include_router(terminal_router, prefix="/api")
 app.include_router(git_router, prefix="/api")
 app.include_router(health_router, prefix="/api")
+app.include_router(prompt_router, prefix="/api")
 
 # WebSocket endpoint streaming agent events to frontend per task
 @app.websocket("/ws/agent/{task_id}")

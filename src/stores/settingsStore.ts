@@ -2,6 +2,11 @@ import { create } from 'zustand';
 import { SystemSettings, AuditLogEntry, AutonomyLevel } from '../types';
 import { MOCK_AUDIT_LOGS } from '../services/mockData';
 
+// TODO: Out of scope for 'project-intelligence' branch.
+// Settings are maintained as local client-side preferences. Connect auditLogs to backend
+// audit/telemetry endpoints (e.g. backend/routers/audit.py) when server audit synchronization is implemented.
+
+
 interface SettingsState {
   settings: SystemSettings;
   auditLogs: AuditLogEntry[];

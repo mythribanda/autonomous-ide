@@ -2,6 +2,11 @@ import { create } from 'zustand';
 import { RecoveryStep } from '../types';
 import { MOCK_RECOVERY_STEPS } from '../services/mockData';
 
+// TODO: Out of scope for 'project-intelligence' branch.
+// Connect to backend recovery service (e.g. backend/routers/recovery.py)
+// when autonomous self-healing multi-step execution loop is implemented.
+
+
 interface RecoveryState {
   steps: RecoveryStep[];
   isSimulatingRecovery: boolean;

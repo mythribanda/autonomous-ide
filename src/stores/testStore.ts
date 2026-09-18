@@ -2,6 +2,12 @@ import { create } from 'zustand';
 import { TestSummary, TestCase } from '../types';
 import { MOCK_TEST_SUMMARY, MOCK_FAILED_TEST_SAMPLE } from '../services/mockData';
 
+// TODO: Out of scope for 'project-intelligence' branch.
+// Connect to real backend test runner service (e.g. backend/routers/tests.py)
+// when structured test suite execution and failure parsing are implemented.
+// Real CLI tests can currently be executed directly via the terminal store and backend terminal router.
+
+
 interface TestState {
   testSummary: TestSummary;
   selectedFailure: TestCase | null;

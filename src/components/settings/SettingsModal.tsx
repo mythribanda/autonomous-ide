@@ -29,9 +29,16 @@ export const SettingsModal: React.FC = () => {
       subtitle="Workspace, local runtime, and model configuration."
       maxWidth="4xl"
     >
-      <div className="flex flex-col md:flex-row gap-5 font-sans text-xs">
-        {/* Left Tabs */}
-        <div className="w-full md:w-44 space-y-0.5 select-none border-b md:border-b-0 md:border-r border-[#2B2B2B] pb-2 md:pb-0 md:pr-2">
+      <div className="flex flex-col gap-4 font-sans text-xs">
+        {/* Local storage status indicator */}
+        <div className="p-2 px-3 rounded-sm bg-[#181818] border border-[#2B2B2B] flex items-center justify-between">
+          <span className="text-[#858585] font-mono text-[11px]">Configuration State:</span>
+          <Badge variant="amber" size="xs">Local Preferences • Server sync not connected</Badge>
+        </div>
+
+        <div className="flex flex-col md:flex-row gap-5">
+          {/* Left Tabs */}
+          <div className="w-full md:w-44 space-y-0.5 select-none border-b md:border-b-0 md:border-r border-[#2B2B2B] pb-2 md:pb-0 md:pr-2">
           {[
             { id: 'ai', label: 'AI & Model', icon: Cpu },
             { id: 'workspace', label: 'Workspace', icon: HardDrive },
@@ -221,6 +228,7 @@ export const SettingsModal: React.FC = () => {
           )}
         </div>
       </div>
-    </Modal>
-  );
+    </div>
+  </Modal>
+);
 };

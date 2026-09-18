@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { useProjectStore } from '../../store/projectStore';
-import { ProjectScanPanel } from '../ProjectIntelligence/ProjectScanPanel';
-import { DependencyGraph } from '../ProjectIntelligence/DependencyGraph';
-import { ImpactReport } from '../ProjectIntelligence/ImpactReport';
+import { ProjectScanPanel } from './ProjectScanPanel';
+import { DependencyGraph } from './DependencyGraph';
+import { ImpactReport } from './ImpactReport';
 import { MetricCard } from '../common/MetricCard';
 import { Badge } from '../common/Badge';
 import {

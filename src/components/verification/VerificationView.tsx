@@ -13,7 +13,8 @@ import {
   Cpu,
   Layers,
   Activity,
-  History
+  History,
+  AlertTriangle
 } from 'lucide-react';
 
 export const VerificationView: React.FC = () => {
@@ -52,6 +53,9 @@ export const VerificationView: React.FC = () => {
               </h1>
               <Badge variant={testSummary.overall === 'PASSED' ? 'emerald' : 'rose'} size="xs">
                 {testSummary.overall}
+              </Badge>
+              <Badge variant="amber" size="xs">
+                Simulation Mode • Not Connected
               </Badge>
             </div>
             <p className="text-xs text-[#858585] mt-0.5">
@@ -96,6 +100,17 @@ export const VerificationView: React.FC = () => {
             <Play size={12} />
             <span>{isRunningTests ? 'Executing...' : 'Run All Tests'}</span>
           </button>
+        </div>
+      </div>
+
+      {/* Not connected notice banner */}
+      <div className="p-3 rounded-sm bg-[#2A2312] border border-[#CCA700]/30 flex items-start gap-2.5 text-[#CCA700]">
+        <AlertTriangle size={15} className="shrink-0 mt-0.5 text-[#CCA700]" />
+        <div className="text-xs space-y-0.5">
+          <div className="font-bold">Test Runner Backend Service Not Connected</div>
+          <div className="text-[#CCCCCC]">
+            Structured test runner endpoints are not implemented on this branch. This view runs in interactive simulation mode. You can execute real test suites directly via the integrated Terminal.
+          </div>
         </div>
       </div>
 

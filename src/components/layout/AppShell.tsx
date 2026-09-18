@@ -8,7 +8,7 @@ import { Explorer } from '../explorer/Explorer';
 import { EditorArea } from '../editor/EditorArea';
 import { AgentPanel } from '../agent/AgentPanel';
 import { TerminalPanel } from '../terminal/TerminalPanel';
-import { ProjectIntelligenceView } from '../intelligence/ProjectIntelligenceView';
+import { ProjectIntelligenceView } from '../ProjectIntelligence';
 import { ImpactAnalysisView } from '../impact/ImpactAnalysisView';
 import { VerificationView } from '../verification/VerificationView';
 import { RecoveryTimelineView } from '../recovery/RecoveryTimelineView';

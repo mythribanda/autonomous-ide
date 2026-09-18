@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useImpactStore } from '../../stores/impactStore';
 import { useProjectStore } from '../../store/projectStore';
 import { ImpactReport as ImpactReportType } from '../../types/api';
 import {
@@ -25,9 +26,10 @@ export const ImpactReport: React.FC<ImpactReportProps> = ({
   report: propReport,
   className = ''
 }) => {
-  const storeReport = useProjectStore((s) => s.impactReport);
-  const fetchImpact = useProjectStore((s) => s.fetchImpactAnalysis);
-  const report = propReport || storeReport;
+  const impactStoreReport = useImpactStore((s) => s.report);
+  const projectStoreReport = useProjectStore((s) => s.impactReport);
+  const fetchImpact = useImpactStore((s) => s.fetchImpactAnalysis);
+  const report = propReport || impactStoreReport || projectStoreReport;
 
   const [reqInput, setReqInput] = useState('');
   const [analyzing, setAnalyzing] = useState(false);

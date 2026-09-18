@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -81,3 +82,27 @@ async def rollback_checkpoint(req: GitRollbackRequest):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
         )
+
+@router.get("/checkpoints", response_model=List[GitCheckpointResponse])
+async def list_checkpoints(
+    project_id: Optional[str] = Query(None, description="Project ID"),
+    db: AsyncSession = Depends(get_db)
+):
+    stmt = select(GitCheckpoint)
+    if project_id:
+        stmt = stmt.where(GitCheckpoint.project_id == project_id)
+    stmt = stmt.order_by(GitCheckpoint.created_at.desc())
+    result = await db.execute(stmt)
+    return result.scalars().all()
+
+@router.get("/diff")
+async def get_git_diff(
+    project_path: str = Query(..., description="Project folder path"),
+    file_path: Optional[str] = Query(None, description="Specific file path")
+):
+    diff = git_service.get_diff(project_path, file_path)
+    return {
+        "project_path": project_path,
+        "file_path": file_path,
+        "diff": diff
+    }
