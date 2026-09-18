@@ -7,11 +7,12 @@ import {
   RefreshCw,
   Search,
   ChevronDown,
-  X
+  X,
+  FolderOpen
 } from 'lucide-react';
 
 export const Explorer: React.FC = () => {
-  const { rootFolder, currentProject, searchQuery, setSearchQuery, addFile } = useProjectStore();
+  const { rootFolder, currentProject, searchQuery, setSearchQuery, addFile, openProjectWithDialog } = useProjectStore();
   const [isCreatingFile, setIsCreatingFile] = useState(false);
   const [newFileName, setNewFileName] = useState('');
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -41,14 +42,16 @@ export const Explorer: React.FC = () => {
         <div className="flex items-center gap-1">
           <button
             onClick={() => setIsCreatingFile(true)}
-            className="p-1 rounded-sm hover:bg-[#2A2D2E] hover:text-[#FFFFFF] transition-colors"
+            disabled={!rootFolder}
+            className="p-1 rounded-sm hover:bg-[#2A2D2E] hover:text-[#FFFFFF] transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
             title="New File"
           >
             <FilePlus size={14} />
           </button>
           <button
             onClick={() => setIsCreatingFile(true)}
-            className="p-1 rounded-sm hover:bg-[#2A2D2E] hover:text-[#FFFFFF] transition-colors"
+            disabled={!rootFolder}
+            className="p-1 rounded-sm hover:bg-[#2A2D2E] hover:text-[#FFFFFF] transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
             title="New Folder"
           >
             <FolderPlus size={14} />
@@ -74,7 +77,8 @@ export const Explorer: React.FC = () => {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search files..."
-            className="w-full pl-6 pr-6 py-1 bg-[#1E1E1E] border border-[#2B2B2B] rounded-sm text-xs text-[#CCCCCC] placeholder-[#858585] focus:outline-none focus:border-[#007ACC] font-sans"
+            disabled={!rootFolder}
+            className="w-full pl-6 pr-6 py-1 bg-[#1E1E1E] border border-[#2B2B2B] rounded-sm text-xs text-[#CCCCCC] placeholder-[#858585] focus:outline-none focus:border-[#007ACC] font-sans disabled:opacity-50"
           />
           {searchQuery && (
             <button
@@ -91,7 +95,7 @@ export const Explorer: React.FC = () => {
       <div className="px-2 py-1 flex items-center justify-between text-[11px] font-bold text-[#CCCCCC] bg-[#181818] border-b border-[#2B2B2B]/60">
         <div className="flex items-center gap-1">
           <ChevronDown size={13} className="text-[#858585]" />
-          <span className="font-sans uppercase tracking-wider">{currentProject}</span>
+          <span className="font-sans uppercase tracking-wider">{currentProject || 'NO FOLDER OPENED'}</span>
         </div>
       </div>
 
@@ -114,14 +118,29 @@ export const Explorer: React.FC = () => {
 
       {/* Project Tree */}
       <div className="flex-1 overflow-y-auto py-1 space-y-[1px]">
-        <FileTree node={rootFolder} />
+        {rootFolder ? (
+          <FileTree node={rootFolder} />
+        ) : (
+          <div className="h-full flex flex-col items-center justify-center p-4 text-center text-[#858585] space-y-3">
+            <FolderOpen size={24} className="text-[#4A4A4A]" />
+            <p className="text-xs text-[#858585]">You have not yet opened a folder.</p>
+            <button
+              onClick={() => openProjectWithDialog()}
+              className="px-3 py-1.5 rounded-sm bg-[#007ACC] hover:bg-[#0062A3] text-[#FFFFFF] text-xs font-medium transition-colors"
+            >
+              Open Folder
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Active Autonomous Status in Explorer */}
-      <div className="px-3 py-1.5 border-t border-[#2B2B2B] bg-[#181818] text-[11px] font-mono flex items-center justify-between">
-        <span className="text-[#858585]">AST Indexed</span>
-        <span className="text-[#89D185]">312 files</span>
-      </div>
+      {rootFolder && (
+        <div className="px-3 py-1.5 border-t border-[#2B2B2B] bg-[#181818] text-[11px] font-mono flex items-center justify-between">
+          <span className="text-[#858585]">AST Indexed</span>
+          <span className="text-[#89D185]">{rootFolder.children?.length || 0} top-level items</span>
+        </div>
+      )}
     </div>
   );
 };

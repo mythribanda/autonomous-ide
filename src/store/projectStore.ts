@@ -3,17 +3,142 @@ import {
   Project,
   ProjectScanResult,
   KnowledgeGraphResult,
-  ImpactReport
+  ImpactReport,
+  FileItem
 } from '../types/api';
 import { FileNode } from '../types';
-import { MOCK_PROJECT_FILES } from '../services/mockData';
 import {
   openProject as apiOpenProject,
   analyzeProject as apiAnalyzeProject,
   buildKnowledgeGraph as apiBuildKnowledgeGraph,
   getProjectSummary as apiGetProjectSummary,
-  getImpactAnalysis as apiGetImpactAnalysis
+  getImpactAnalysis as apiGetImpactAnalysis,
+  listFiles as apiListFiles,
+  readFile as apiReadFile
 } from '../lib/api';
+
+export function detectLanguage(filename: string): string {
+  const ext = filename.split('.').pop()?.toLowerCase();
+  switch (ext) {
+    case 'ts':
+    case 'tsx':
+      return 'typescript';
+    case 'js':
+    case 'jsx':
+      return 'javascript';
+    case 'py':
+      return 'python';
+    case 'json':
+      return 'json';
+    case 'html':
+      return 'html';
+    case 'css':
+      return 'css';
+    case 'md':
+      return 'markdown';
+    case 'sql':
+      return 'sql';
+    case 'sh':
+    case 'bash':
+      return 'shell';
+    case 'yaml':
+    case 'yml':
+      return 'yaml';
+    default:
+      return 'plaintext';
+  }
+}
+
+export function convertFileListToFileTree(rootPath: string, items: FileItem[]): FileNode {
+  const normalizedRoot = rootPath.replace(/\\/g, '/').replace(/\/+$/, '');
+  const baseName = normalizedRoot.split('/').pop() || 'Project';
+
+  const rootNode: FileNode = {
+    id: normalizedRoot,
+    name: baseName,
+    path: normalizedRoot,
+    type: 'folder',
+    children: []
+  };
+
+  const findOrCreateFolder = (parent: FileNode, name: string, fullPath: string): FileNode => {
+    if (!parent.children) parent.children = [];
+    let existing = parent.children.find((c) => c.name === name && c.type === 'folder');
+    if (!existing) {
+      existing = {
+        id: fullPath,
+        name,
+        path: fullPath,
+        type: 'folder',
+        children: []
+      };
+      parent.children.push(existing);
+    }
+    return existing;
+  };
+
+  const rootLower = normalizedRoot.toLowerCase();
+
+  for (const item of items) {
+    const itemPath = item.path.replace(/\\/g, '/');
+    const itemLower = itemPath.toLowerCase();
+
+    let rel = item.name;
+    if (itemLower.startsWith(rootLower + '/')) {
+      rel = itemPath.slice(normalizedRoot.length + 1);
+    } else if (itemLower === rootLower) {
+      continue;
+    }
+
+    const parts = rel.split('/').filter(Boolean);
+    if (parts.length === 0) continue;
+
+    let curr = rootNode;
+    let currentPath = normalizedRoot;
+
+    for (let i = 0; i < parts.length; i++) {
+      const seg = parts[i];
+      const isLast = i === parts.length - 1;
+      currentPath = `${currentPath}/${seg}`;
+
+      if (!isLast) {
+        curr = findOrCreateFolder(curr, seg, currentPath);
+      } else {
+        if (item.is_dir) {
+          findOrCreateFolder(curr, seg, itemPath);
+        } else {
+          if (!curr.children) curr.children = [];
+          const existing = curr.children.find((c) => c.name === seg && c.type === 'file');
+          if (!existing) {
+            curr.children.push({
+              id: itemPath,
+              name: seg,
+              path: itemPath,
+              type: 'file',
+              size: item.size ?? undefined,
+              language: detectLanguage(seg)
+            });
+          }
+        }
+      }
+    }
+  }
+
+  const sortTree = (node: FileNode) => {
+    if (node.children) {
+      node.children.sort((a, b) => {
+        if (a.type !== b.type) {
+          return a.type === 'folder' ? -1 : 1;
+        }
+        return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+      });
+      node.children.forEach(sortTree);
+    }
+  };
+
+  sortTree(rootNode);
+  return rootNode;
+}
 
 export interface OpenFile {
   id: string;
@@ -41,7 +166,7 @@ export interface ProjectStoreState {
   projectId: string | null;
   projectPath: string;
   project: Project | null;
-  rootFolder: FileNode;
+  rootFolder: FileNode | null;
   openFiles: OpenFile[];
   activeFileId: string | null;
   searchQuery: string;
@@ -62,7 +187,7 @@ export interface ProjectStoreState {
 
   // Editor Actions
   setProject: (name: string, path: string) => void;
-  openFile: (file: FileNode) => void;
+  openFile: (file: FileNode) => Promise<void>;
   closeFile: (id: string) => void;
   setActiveFile: (id: string) => void;
   updateFileContent: (id: string, content: string) => void;
@@ -79,31 +204,16 @@ export interface ProjectStoreState {
   resetOpenState: () => void;
 }
 
-const initialOpenFiles: OpenFile[] = [
-  {
-    id: 'f-p-dashboard',
-    name: 'Dashboard.tsx',
-    path: '/frontend/src/pages/Dashboard.tsx',
-    language: 'typescript',
-    content: (MOCK_PROJECT_FILES.children?.[0].children?.[0].children?.[1].children?.[0] as FileNode)?.content || '',
-    isModified: true
-  }
-];
-
 export const useProjectStore = create<ProjectStoreState>((set, get) => ({
-  currentProject: 'EduSim',
+  currentProject: '',
   projectId: null,
-  projectPath: 'C:\\Projects\\EduSim',
+  projectPath: '',
   project: null,
-  rootFolder: MOCK_PROJECT_FILES,
-  openFiles: initialOpenFiles,
-  activeFileId: 'f-p-dashboard',
+  rootFolder: null,
+  openFiles: [],
+  activeFileId: null,
   searchQuery: '',
-  expandedFolders: {
-    root: true,
-    frontend: true,
-    'frontend-src': true
-  },
+  expandedFolders: {},
 
   scanResult: null,
   knowledgeGraph: null,
@@ -118,25 +228,38 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
 
   setProject: (name, path) => set({ currentProject: name, projectPath: path }),
 
-  openFile: (file) => {
+  openFile: async (file) => {
     if (file.type !== 'file') return;
-    set((state) => {
-      const exists = state.openFiles.find((f) => f.id === file.id);
-      if (exists) {
-        return { activeFileId: file.id };
+    const { openFiles, projectPath } = get();
+    const exists = openFiles.find((f) => f.id === file.id || f.path === file.path);
+    if (exists) {
+      set({ activeFileId: exists.id });
+      return;
+    }
+
+    let fileContent = file.content;
+    if (fileContent === undefined) {
+      try {
+        const res = await apiReadFile(projectPath, file.path);
+        fileContent = res.content;
+      } catch (err) {
+        console.error(`Failed to read file ${file.path}:`, err);
+        fileContent = `// Unable to load file content\n// Error: ${err instanceof Error ? err.message : String(err)}`;
       }
-      const newFile: OpenFile = {
-        id: file.id,
-        name: file.name,
-        path: file.path,
-        language: file.language || 'plaintext',
-        content: file.content || `// ${file.name}\n`,
-        isModified: file.status === 'modified' || file.status === 'added'
-      };
-      return {
-        openFiles: [...state.openFiles, newFile],
-        activeFileId: file.id
-      };
+    }
+
+    const newFile: OpenFile = {
+      id: file.id,
+      name: file.name,
+      path: file.path,
+      language: file.language || detectLanguage(file.name),
+      content: fileContent ?? '',
+      isModified: file.status === 'modified' || file.status === 'added'
+    };
+
+    set({
+      openFiles: [...openFiles, newFile],
+      activeFileId: file.id
     });
   },
 
@@ -199,11 +322,22 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
       const project = await apiOpenProject(path, name);
       const projName = project.name || path.split(/[/\\]/).filter(Boolean).pop() || 'Project';
 
+      // 2. Fetch real filesystem tree from backend
+      let realRootFolder: FileNode | null = null;
+      try {
+        const fileList = await apiListFiles(project.path, true);
+        realRootFolder = convertFileListToFileTree(project.path, fileList.items);
+      } catch (fsErr) {
+        console.warn('Could not load filesystem tree for project:', fsErr);
+      }
+
       set({
         currentProject: projName,
         projectId: project.id,
         projectPath: project.path,
         project,
+        rootFolder: realRootFolder,
+        expandedFolders: realRootFolder ? { [realRootFolder.id]: true } : {},
         scanResult: project.scan_result || null,
         openStep: 'scanning_metadata',
         openStepLabel: 'Detected languages, frameworks, and architecture...',

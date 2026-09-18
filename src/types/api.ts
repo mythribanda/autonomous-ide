@@ -247,3 +247,22 @@ export interface PromptCompileRequest {
   project_id?: string | null;
 }
 
+export interface FileItem {
+  name: string;
+  path: string;
+  is_dir: boolean;
+  size?: number | null;
+}
+
+export interface FileListResponse {
+  path: string;
+  items: FileItem[];
+}
+
+export interface FileReadResponse {
+  path: string;
+  content: string;
+  size: number;
+}
+
+

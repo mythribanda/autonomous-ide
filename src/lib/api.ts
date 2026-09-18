@@ -21,7 +21,9 @@ import {
   GitRollbackRequest,
   GitRollbackResponse,
   GitDiffResponse,
-  PromptCompileRequest
+  PromptCompileRequest,
+  FileListResponse,
+  FileReadResponse
 } from '../types/api';
 import { PromptSpecification } from '../types';
 
@@ -271,4 +273,22 @@ export async function compilePrompt(req: PromptCompileRequest): Promise<PromptSp
     body: JSON.stringify(req)
   });
 }
+
+export async function listFiles(projectPath: string, recursive: boolean = true): Promise<FileListResponse> {
+  return request<FileListResponse>(`/fs/list?path=${encodeURIComponent(projectPath)}&recursive=${recursive}`, {
+    method: 'GET'
+  });
+}
+
+export async function readFile(projectPath: string, filePath?: string): Promise<FileReadResponse> {
+  let targetPath = filePath ? filePath : projectPath;
+  if (filePath && !filePath.startsWith('/') && !/^[a-zA-Z]:[\\/]/.test(filePath)) {
+    const normalizedProject = projectPath.replace(/[\\/]+$/, '');
+    targetPath = `${normalizedProject}/${filePath.replace(/^[\\/]+/, '')}`;
+  }
+  return request<FileReadResponse>(`/fs/read?path=${encodeURIComponent(targetPath)}`, {
+    method: 'GET'
+  });
+}
+
 
