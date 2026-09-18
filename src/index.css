@@ -1,0 +1,70 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --color-bg-primary: #1E1E1E;
+    --color-bg-secondary: #181818;
+    --color-bg-panel: #181818;
+    --color-border: #2B2B2B;
+    --color-accent: #007ACC;
+    --color-selection: #264F78;
+  }
+
+  body {
+    background-color: #1E1E1E;
+    color: #CCCCCC;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  }
+
+  /* VS Code standard scrollbar */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(121, 121, 121, 0.4);
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(100, 100, 100, 0.7);
+  }
+  ::-webkit-scrollbar-thumb:active {
+    background: rgba(191, 191, 191, 0.4);
+  }
+
+  ::selection {
+    background-color: #264F78;
+    color: #FFFFFF;
+  }
+}
+
+/* VS Code component utilities */
+.vscode-panel {
+  background-color: #181818;
+  border-color: #2B2B2B;
+}
+
+.vscode-editor-bg {
+  background-color: #1E1E1E;
+}
+
+.vscode-border {
+  border-color: #2B2B2B;
+}
+
+.vscode-hover:hover {
+  background-color: #2A2D2E;
+}
+
+.vscode-selected {
+  background-color: #264F78;
+  color: #FFFFFF;
+}
+
+.font-mono-code {
+  font-family: 'JetBrains Mono', 'Cascadia Code', 'Cascadia Mono', Consolas, monospace;
+}
