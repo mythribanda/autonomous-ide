@@ -19,6 +19,7 @@ import { SettingsModal } from '../settings/SettingsModal';
 import { CommandPalette } from '../common/CommandPalette';
 import { ToastContainer } from '../common/Toast';
 import { PromptBar } from '../PromptBar/PromptBar';
+import { ApprovalDialog } from '../agent/ApprovalDialog';
 
 export const AppShell: React.FC = () => {
   const {
@@ -111,6 +112,7 @@ export const AppShell: React.FC = () => {
       <CommandPalette />
       <SettingsModal />
       <ToastContainer />
+      <ApprovalDialog />
     </div>
   );
 };

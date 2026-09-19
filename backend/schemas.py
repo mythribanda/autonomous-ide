@@ -1,5 +1,6 @@
-from datetime import datetime
-from typing import Optional, List, Any, Dict
+from datetime import datetime, timezone
+from typing import Optional, List, Any, Dict, Union, Set
+from enum import Enum
 from pydantic import BaseModel, ConfigDict, Field
 
 # Common Error Schema
@@ -126,7 +127,7 @@ class ImpactReport(BaseModel):
     affected_components: List[str] = Field(default_factory=list)
     affected_database_models: List[str] = Field(default_factory=list)
     tests_to_run: List[str] = Field(default_factory=list)
-    risk_level: str  # "low" | "medium" | "high"
+    risk_level: str = "low"  # "low" | "medium" | "high"
     risk_reasons: List[str] = Field(default_factory=list)
     estimated_files_to_change: int = 0
 
@@ -211,6 +212,138 @@ class AgentCompileRequest(BaseModel):
     requirement: str
     project_id: str
     task_id: Optional[str] = None
+
+# Agent Tools & Permissions
+class PermissionTag(str, Enum):
+    READ_ONLY = "read_only"
+    FILE_WRITE = "file_write"
+    FILE_DELETE = "file_delete"
+    COMMAND_RUN = "command_run"
+    COMMAND_DANGEROUS = "command_dangerous"
+    GIT_WRITE = "git_write"
+
+class AgentPermissions(BaseModel):
+    allowed_tags: Set[str] = Field(default_factory=lambda: {
+        PermissionTag.READ_ONLY.value,
+        PermissionTag.FILE_WRITE.value,
+        PermissionTag.COMMAND_RUN.value,
+        PermissionTag.GIT_WRITE.value,
+    })
+
+    def is_allowed(self, tag: str) -> bool:
+        return tag in self.allowed_tags
+
+    def grant(self, tag: str):
+        self.allowed_tags.add(tag)
+
+    def revoke(self, tag: str):
+        self.allowed_tags.discard(tag)
+
+class ToolCall(BaseModel):
+    tool_name: str
+    args: Dict[str, Any] = Field(default_factory=dict)
+
+class ToolResult(BaseModel):
+    success: bool
+    output: Union[str, Dict[str, Any], List[Any]] = ""
+    error: Optional[str] = None
+    requires_approval: bool = False
+
+# Autonomous Agent State & Execution Models
+class AgentStatus(str, Enum):
+    QUEUED = "queued"
+    PLANNING = "planning"
+    EXECUTING = "executing"
+    TESTING = "testing"
+    RECOVERING = "recovering"
+    WAITING_APPROVAL = "waiting_approval"
+    PAUSED = "paused"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+class AgentStep(BaseModel):
+    step_id: str
+    description: str
+    tool: str
+    tool_args: Dict[str, Any] = Field(default_factory=dict)
+    status: str = "pending"  # "pending" | "running" | "done" | "failed" | "skipped"
+    result: Optional[ToolResult] = None
+    timestamp: Optional[datetime] = None
+
+class Observation(BaseModel):
+    step_id: str
+    tool: str
+    success: bool
+    output: str
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class RecoveryAttempt(BaseModel):
+    attempt_number: int
+    error: str
+    diagnosis: str
+    repair_action: str
+    success: bool
+
+class VerificationCheck(BaseModel):
+    name: str
+    passed: bool
+    output: str = ""
+    error: Optional[str] = None
+
+class CriterionCheck(BaseModel):
+    criterion: str
+    met: bool
+    evidence: str
+
+class VerificationReport(BaseModel):
+    build_status: VerificationCheck = Field(default_factory=lambda: VerificationCheck(name="build", passed=True, output="Skipped"))
+    test_status: VerificationCheck = Field(default_factory=lambda: VerificationCheck(name="test", passed=True, output="Skipped"))
+    lint_status: VerificationCheck = Field(default_factory=lambda: VerificationCheck(name="lint", passed=True, output="Skipped"))
+    requirements_met: List[CriterionCheck] = Field(default_factory=list)
+    files_changed_count: int = 0
+    overall_success: bool = True
+    summary: str = ""
+
+    @property
+    def passed(self) -> bool:
+        return self.overall_success
+
+    @property
+    def checks(self) -> List[Dict[str, Any]]:
+        return [
+            {"name": "build", "passed": self.build_status.passed, "detail": self.build_status.output},
+            {"name": "test", "passed": self.test_status.passed, "detail": self.test_status.output},
+            {"name": "lint", "passed": self.lint_status.passed, "detail": self.lint_status.output},
+        ] + [
+            {"criterion": c.criterion, "passed": c.met, "detail": c.evidence}
+            for c in self.requirements_met
+        ]
+
+
+class AgentResult(BaseModel):
+    success: bool
+    files_modified: List[str] = Field(default_factory=list)
+    acceptance_criteria_met: List[str] = Field(default_factory=list)
+    acceptance_criteria_failed: List[str] = Field(default_factory=list)
+    recovery_attempts: int = 0
+    human_interventions: int = 0
+    execution_time_seconds: float = 0.0
+    final_status: str = "completed"
+    verification_report: Optional[VerificationReport] = None
+
+class AgentState(BaseModel):
+    task_id: str
+    project_id: str
+    compiled_spec: CompiledSpec
+    plan: List[AgentStep] = Field(default_factory=list)
+    current_step_index: int = 0
+    observations: List[Observation] = Field(default_factory=list)
+    status: AgentStatus = AgentStatus.QUEUED
+    error_count: int = 0
+    files_modified: List[str] = Field(default_factory=list)
+    recovery_history: List[RecoveryAttempt] = Field(default_factory=list)
+
 
 # Filesystem
 class FileItem(BaseModel):

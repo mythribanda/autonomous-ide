@@ -16,11 +16,16 @@ from backend.schemas import (
     AgentStatusResponse,
     AgentCompileRequest,
     CompiledSpec,
+    AgentState,
+    AgentStatus,
+    ImpactReport,
+    VerificationReport,
 )
 from backend.services.ai_agent import agent_manager
 from backend.services.prompt_compiler import prompt_compiler
 from backend.services.knowledge_graph import knowledge_graph
 from backend.services.impact_analyzer import impact_analyzer
+from backend.services.verification import VerificationService
 from backend.routers.projects import _get_or_build_knowledge_graph
 
 logger = logging.getLogger(__name__)
@@ -263,7 +268,7 @@ async def stop_agent(req: AgentStopRequest, db: AsyncSession = Depends(get_db)):
         )
 
     stopped = await agent_manager.stop_execution(task.id)
-    task.status = "failed" if not stopped else "queued"
+    task.status = "cancelled" if stopped else "failed"
     await db.commit()
 
     return AgentStatusResponse(
@@ -272,6 +277,32 @@ async def stop_agent(req: AgentStopRequest, db: AsyncSession = Depends(get_db)):
         progress=0.0,
         current_activity="Task execution was halted"
     )
+
+@router.post("/{task_id}/approve")
+async def approve_agent_step(task_id: str):
+    approved = await agent_manager.approve_step(task_id)
+    return {"task_id": task_id, "approved": approved}
+
+@router.post("/{task_id}/stop")
+async def stop_agent_by_id(task_id: str, db: AsyncSession = Depends(get_db)):
+    stopped = await agent_manager.stop_execution(task_id)
+    stmt = select(Task).where(Task.id == task_id)
+    res = await db.execute(stmt)
+    t = res.scalars().first()
+    if t:
+        t.status = "cancelled"
+        await db.commit()
+    return {"task_id": task_id, "status": "cancelled", "stopped": stopped}
+
+@router.post("/{task_id}/pause")
+async def pause_agent_by_id(task_id: str):
+    paused = await agent_manager.pause_execution(task_id)
+    return {"task_id": task_id, "status": "paused", "paused": paused}
+
+@router.post("/{task_id}/resume")
+async def resume_agent_by_id(task_id: str):
+    resumed = await agent_manager.resume_execution(task_id)
+    return {"task_id": task_id, "status": "executing", "resumed": resumed}
 
 @router.get("/status", response_model=AgentStatusResponse)
 async def get_agent_status(task_id: str = Query(..., description="ID of task to check")):
@@ -282,3 +313,101 @@ async def get_agent_status(task_id: str = Query(..., description="ID of task to 
         progress=state.get("progress", 0.0),
         current_activity=state.get("current_activity")
     )
+
+@router.get("/{task_id}/status", response_model=AgentState)
+async def get_agent_state_by_id(task_id: str, db: AsyncSession = Depends(get_db)):
+    state = agent_manager.get_state(task_id)
+    if state:
+        return state
+
+    stmt = select(Task).where(Task.id == task_id)
+    res = await db.execute(stmt)
+    task = res.scalars().first()
+    if not task:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Task not found with id: {task_id}"
+        )
+
+    if task.compiled_spec_json:
+        spec = CompiledSpec.model_validate_json(task.compiled_spec_json)
+    else:
+        spec = CompiledSpec(
+            task_id=task.id,
+            raw_requirement=task.requirement,
+            intent=task.requirement,
+            intent_category="feature_add",
+            scope="project",
+            impact_report=ImpactReport(),
+            confidence_score=0.8
+        )
+
+    return AgentState(
+        task_id=task.id,
+        project_id=task.project_id,
+        compiled_spec=spec,
+        status=AgentStatus(task.status) if task.status in [s.value for s in AgentStatus] else AgentStatus.QUEUED
+    )
+
+
+@router.post("/{task_id}/verify", response_model=VerificationReport)
+async def verify_agent_task(task_id: str, db: AsyncSession = Depends(get_db)):
+    state = agent_manager.get_state(task_id)
+    workspace_path = "."
+    if not state:
+        stmt = select(Task).where(Task.id == task_id)
+        res = await db.execute(stmt)
+        task = res.scalars().first()
+        if not task:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Task not found with id: {task_id}"
+            )
+
+        p_stmt = select(Project).where(Project.id == task.project_id)
+        p_res = await db.execute(p_stmt)
+        project = p_res.scalars().first()
+        if project:
+            workspace_path = project.path
+
+        if task.compiled_spec_json:
+            spec = CompiledSpec.model_validate_json(task.compiled_spec_json)
+        else:
+            spec = CompiledSpec(
+                task_id=task.id,
+                raw_requirement=task.requirement,
+                intent=task.requirement,
+                intent_category="feature_add",
+                scope="project",
+                impact_report=ImpactReport(),
+                confidence_score=0.8
+            )
+
+        state = AgentState(
+            task_id=task.id,
+            project_id=task.project_id,
+            compiled_spec=spec,
+            status=AgentStatus(task.status) if task.status in [s.value for s in AgentStatus] else AgentStatus.QUEUED
+        )
+    else:
+        p_stmt = select(Project).where(Project.id == state.project_id)
+        p_res = await db.execute(p_stmt)
+        project = p_res.scalars().first()
+        if project:
+            workspace_path = project.path
+
+    report = await VerificationService.verify(state, workspace_path=workspace_path)
+    agent_manager.set_verification_report(task_id, report)
+    return report
+
+
+@router.get("/{task_id}/verification", response_model=VerificationReport)
+async def get_verification_report_by_id(task_id: str, db: AsyncSession = Depends(get_db)):
+    report = agent_manager.get_verification_report(task_id)
+    if report:
+        return report
+
+    # If no report stored, generate and store
+    return await verify_agent_task(task_id, db)
+
+

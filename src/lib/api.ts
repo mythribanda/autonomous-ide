@@ -25,7 +25,8 @@ import {
   GitDiffResponse,
   PromptCompileRequest,
   FileListResponse,
-  FileReadResponse
+  FileReadResponse,
+  VerificationReport
 } from '../types/api';
 import { PromptSpecification } from '../types';
 
@@ -216,6 +217,43 @@ export async function getAgentStatus(taskId: string): Promise<AgentStatusRespons
     method: 'GET'
   });
 }
+
+export async function approveAgentStep(taskId: string): Promise<{ task_id: string; approved: boolean }> {
+  return request<{ task_id: string; approved: boolean }>(`/agent/${encodeURIComponent(taskId)}/approve`, {
+    method: 'POST'
+  });
+}
+
+export async function pauseAgentTask(taskId: string): Promise<{ task_id: string; status: string; paused: boolean }> {
+  return request<{ task_id: string; status: string; paused: boolean }>(`/agent/${encodeURIComponent(taskId)}/pause`, {
+    method: 'POST'
+  });
+}
+
+export async function resumeAgentTask(taskId: string): Promise<{ task_id: string; status: string; resumed: boolean }> {
+  return request<{ task_id: string; status: string; resumed: boolean }>(`/agent/${encodeURIComponent(taskId)}/resume`, {
+    method: 'POST'
+  });
+}
+
+export async function stopAgentTask(taskId: string): Promise<{ task_id: string; status: string; stopped: boolean }> {
+  return request<{ task_id: string; status: string; stopped: boolean }>(`/agent/${encodeURIComponent(taskId)}/stop`, {
+    method: 'POST'
+  });
+}
+
+export async function verifyAgentTask(taskId: string): Promise<VerificationReport> {
+  return request<VerificationReport>(`/agent/${encodeURIComponent(taskId)}/verify`, {
+    method: 'POST'
+  });
+}
+
+export async function getAgentVerificationReport(taskId: string): Promise<VerificationReport> {
+  return request<VerificationReport>(`/agent/${encodeURIComponent(taskId)}/verification`, {
+    method: 'GET'
+  });
+}
+
 
 export async function compileAgentRequirement(req: AgentCompileRequest): Promise<CompiledSpec> {
   return request<CompiledSpec>('/agent/compile', {

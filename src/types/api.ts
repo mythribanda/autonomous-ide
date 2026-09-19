@@ -298,4 +298,50 @@ export interface AgentCompileRequest {
   task_id?: string | null;
 }
 
+export interface VerificationCheck {
+  name: string;
+  passed: boolean;
+  output: string;
+  error?: string | null;
+}
+
+export interface CriterionCheck {
+  criterion: string;
+  met: boolean;
+  evidence: string;
+}
+
+export interface VerificationReport {
+  build_status: VerificationCheck;
+  test_status: VerificationCheck;
+  lint_status: VerificationCheck;
+  requirements_met: CriterionCheck[];
+  files_changed_count: number;
+  overall_success: boolean;
+  summary: string;
+  passed?: boolean;
+}
+
+export interface TaskReportData {
+  task: string;
+  status: string;
+  filesChanged: number;
+  testsPassed: number;
+  testsFailed: number;
+  buildStatus: 'success' | 'failed' | 'skipped';
+  recoveryAttempts: number;
+  humanInterventions: number;
+  executionTimeSeconds: number;
+  gitCheckpoint?: string | null;
+}
+
+export interface ApprovalRequest {
+  stepId: string;
+  tool: string;
+  args: Record<string, any>;
+  riskLevel?: 'low' | 'medium' | 'high';
+  message?: string;
+}
+
+
 
