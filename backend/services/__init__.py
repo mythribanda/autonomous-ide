@@ -6,6 +6,7 @@ from backend.services.knowledge_graph import KnowledgeGraph, knowledge_graph
 from backend.services.impact_analyzer import ImpactAnalyzer, impact_analyzer
 from backend.services.prompt_compiler import PromptCompiler, prompt_compiler
 from backend.services.verification import VerificationService, verification_service
+from backend.services.permission_service import PermissionService, permission_service
 from backend.services.agent_tools import (
     execute_tool,
     AgentToolRegistry,
@@ -44,6 +45,8 @@ __all__ = [
     "prompt_compiler",
     "VerificationService",
     "verification_service",
+    "PermissionService",
+    "permission_service",
     "execute_tool",
     "AgentToolRegistry",
     "TOOL_REGISTRY",

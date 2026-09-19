@@ -1,6 +1,6 @@
 export type AutonomyLevel = 'assist' | 'guided' | 'autonomous';
 
-export type AgentStatus = 'idle' | 'planning' | 'executing' | 'verifying' | 'recovering' | 'completed' | 'paused' | 'error';
+export type AgentStatus = 'idle' | 'planning' | 'executing' | 'verifying' | 'recovering' | 'completed' | 'paused' | 'error' | 'waiting_approval';
 
 export type ToolType = 'READ_FILE' | 'SEARCH' | 'WRITE_FILE' | 'RUN_COMMAND' | 'GIT_DIFF' | 'ANALYZE_AST' | 'INSPECT_TEST';
 
@@ -212,6 +212,7 @@ export interface SystemSettings {
 export type ActivityView =
   | 'home'
   | 'explorer'
+  | 'tasks'
   | 'intelligence'
   | 'impact'
   | 'agent'

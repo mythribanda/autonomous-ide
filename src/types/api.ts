@@ -19,11 +19,15 @@ export type TaskStatus =
   | 'queued'
   | 'planning'
   | 'executing'
+  | 'running'
   | 'testing'
   | 'recovering'
   | 'completed'
   | 'failed'
-  | 'waiting_approval';
+  | 'waiting_approval'
+  | 'superseded'
+  | 'cancelled'
+  | 'paused';
 
 export interface Task {
   id: string;
@@ -44,6 +48,7 @@ export interface Task {
 export interface TaskCreateRequest {
   project_id: string;
   requirement: string;
+  mode?: string;
   compiled_spec_json?: string;
 }
 
@@ -56,6 +61,29 @@ export interface TaskEvent {
   data_json?: string | null;
 }
 
+export interface TaskDetailResponse extends Task {
+  compiled_spec?: any | null;
+  events: TaskEvent[];
+}
+
+export interface TaskReportResponse {
+  task_id: string;
+  requirement: string;
+  status: string;
+  phases: Record<string, TaskEvent[]>;
+  verification_report?: any | null;
+  git_checkpoint?: any | null;
+  files_modified: string[];
+  metrics: {
+    execution_time_seconds: number;
+    files_changed: number;
+    tests_passed: number;
+    tests_failed: number;
+    recovery_attempts: number;
+    human_interventions: number;
+  };
+}
+
 export interface AgentMemory {
   id: string;
   project_id: string;
@@ -66,6 +94,7 @@ export interface AgentMemory {
 
 export interface AgentEvent {
   type: string;
+  event_type?: string;
   timestamp: string;
   message: string;
   data?: any;
@@ -90,6 +119,52 @@ export interface AgentStatusResponse {
   current_activity?: string | null;
 }
 
+export interface GitStatus {
+  branch: string;
+  is_clean: boolean;
+  modified_files: string[];
+  added_files: string[];
+  deleted_files: string[];
+  untracked_files: string[];
+  ahead_by: number;
+  behind_by: number;
+  project_path?: string | null;
+  staged_files?: string[] | null;
+}
+
+export interface CheckpointResult {
+  commit_hash: string;
+  files_staged: number;
+  skipped: boolean;
+  message?: string | null;
+  branch?: string | null;
+  id?: string | null;
+}
+
+export interface FileDiff {
+  file_path: string;
+  diff_text: string;
+  lines_added: number;
+  lines_removed: number;
+  old_content?: string | null;
+  new_content?: string | null;
+}
+
+export interface RollbackResult {
+  success: boolean;
+  files_restored: number;
+  message: string;
+}
+
+export interface GitLogEntry {
+  hash: string;
+  short_hash: string;
+  message: string;
+  author: string;
+  date: string;
+  files_changed: number;
+}
+
 export interface GitStatusResponse {
   project_path: string;
   branch: string;
@@ -97,6 +172,10 @@ export interface GitStatusResponse {
   modified_files: string[];
   untracked_files: string[];
   staged_files: string[];
+  added_files?: string[];
+  deleted_files?: string[];
+  ahead_by?: number;
+  behind_by?: number;
 }
 
 export interface GitCheckpointRequest {
@@ -341,6 +420,52 @@ export interface ApprovalRequest {
   args: Record<string, any>;
   riskLevel?: 'low' | 'medium' | 'high';
   message?: string;
+}
+
+export type PermissionLevel =
+  | 'READ_ONLY'
+  | 'FILE_WRITE'
+  | 'FILE_DELETE'
+  | 'COMMAND_RUN'
+  | 'COMMAND_DANGEROUS'
+  | 'GIT_WRITE'
+  | 'GIT_PUSH'
+  | 'NETWORK';
+
+export interface AgentPermissionConfig {
+  allowed: PermissionLevel[];
+  workspace_path: string;
+  blocked_paths: string[];
+  max_files_per_task: number;
+  require_approval_for: PermissionLevel[];
+  auto_approve_test_commands: boolean;
+  auto_approve_build_commands: boolean;
+}
+
+export interface PermissionResult {
+  allowed: boolean;
+  requires_approval: boolean;
+  reason: string;
+}
+
+export interface CommandClassification {
+  is_test: boolean;
+  is_build: boolean;
+  is_dangerous: boolean;
+  required_permission: PermissionLevel;
+  risk_description: string;
+}
+
+export interface SecretMatch {
+  type: string;
+  pattern: string;
+  line_number: number;
+  redacted_preview: string;
+}
+
+export interface PermissionCheckRequest {
+  action: string;
+  path?: string | null;
 }
 
 

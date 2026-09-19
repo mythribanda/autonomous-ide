@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useProjectStore } from '../../stores/projectStore';
 import { FileTree } from './FileTree';
+import { TaskList } from '../Tasks/TaskList';
 import {
   FilePlus,
   FolderPlus,
@@ -117,7 +118,7 @@ export const Explorer: React.FC = () => {
       )}
 
       {/* Project Tree */}
-      <div className="flex-1 overflow-y-auto py-1 space-y-[1px]">
+      <div className="flex-1 overflow-y-auto py-1 space-y-[1px] min-h-[120px]">
         {rootFolder ? (
           <FileTree node={rootFolder} />
         ) : (
@@ -133,6 +134,9 @@ export const Explorer: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Collapsible Tasks Panel in Left Sidebar */}
+      <TaskList isCollapsible={true} defaultExpanded={true} />
 
       {/* Active Autonomous Status in Explorer */}
       {rootFolder && (

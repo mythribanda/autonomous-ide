@@ -9,8 +9,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc, delete
 
 from backend.database import get_db, AsyncSessionLocal
-from backend.models.project import Project, AgentMemory
+from backend.models.project import Project, AgentMemory, Task
 from backend.schemas import (
+    TaskResponse,
     ProjectOpenRequest,
     ProjectResponse,
     ProjectScanResult,
@@ -22,11 +23,16 @@ from backend.schemas import (
     ProjectSummaryResponse,
     ImpactReport,
     ImpactAnalysisRequest,
+    AgentPermissionConfig,
+    PermissionResult,
+    PermissionCheckRequest,
+    PermissionLevel,
 )
 from backend.services.project_scanner import ProjectScanner
 from backend.services.ast_analyzer import ast_analyzer
 from backend.services.knowledge_graph import knowledge_graph
 from backend.services.impact_analyzer import impact_analyzer
+from backend.services.permission_service import permission_service
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
@@ -514,3 +520,146 @@ async def analyze_project_impact(
     )
 
     return report
+
+
+@router.get("/{project_id}/permissions", response_model=AgentPermissionConfig)
+async def get_project_permissions(
+    project_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """Returns the current agent permission configuration for the project."""
+    stmt = select(Project).where(Project.id == project_id)
+    res = await db.execute(stmt)
+    project = res.scalars().first()
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Project not found with id: {project_id}"
+        )
+
+    # Load from project.config_json under "permissions" key
+    if project.config_json:
+        try:
+            cfg_dict = json.loads(project.config_json)
+            if "permissions" in cfg_dict and isinstance(cfg_dict["permissions"], dict):
+                perm_dict = cfg_dict["permissions"]
+                if "workspace_path" not in perm_dict or not perm_dict["workspace_path"]:
+                    perm_dict["workspace_path"] = project.path
+                return AgentPermissionConfig.model_validate(perm_dict)
+        except Exception:
+            pass
+
+    # Default safe config with workspace_path set to project.path
+    return AgentPermissionConfig(workspace_path=project.path)
+
+
+@router.put("/{project_id}/permissions", response_model=AgentPermissionConfig)
+async def update_project_permissions(
+    project_id: str,
+    config: AgentPermissionConfig,
+    db: AsyncSession = Depends(get_db)
+):
+    """Updates the agent permission configuration for the project."""
+    stmt = select(Project).where(Project.id == project_id)
+    res = await db.execute(stmt)
+    project = res.scalars().first()
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Project not found with id: {project_id}"
+        )
+
+    # Ensure workspace_path is valid
+    if not config.workspace_path:
+        config.workspace_path = project.path
+
+    # Merge into project.config_json
+    cfg_dict = {}
+    if project.config_json:
+        try:
+            cfg_dict = json.loads(project.config_json)
+        except Exception:
+            cfg_dict = {}
+
+    cfg_dict["permissions"] = config.model_dump(mode="json")
+    project.config_json = json.dumps(cfg_dict)
+    await db.commit()
+    await db.refresh(project)
+
+    return config
+
+
+@router.post("/{project_id}/permissions/check", response_model=PermissionResult)
+async def check_project_permission(
+    project_id: str,
+    req: PermissionCheckRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """Checks whether an action/path is allowed under the project's permission configuration."""
+    stmt = select(Project).where(Project.id == project_id)
+    res = await db.execute(stmt)
+    project = res.scalars().first()
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Project not found with id: {project_id}"
+        )
+
+    # Resolve permission level enum
+    action_key = req.action.strip().upper()
+    try:
+        level = PermissionLevel(action_key)
+    except ValueError:
+        try:
+            level = PermissionLevel[action_key]
+        except KeyError:
+            return PermissionResult(
+                allowed=False,
+                requires_approval=False,
+                reason=f"Unknown permission level: '{req.action}'"
+            )
+
+    # Fetch configuration
+    config = AgentPermissionConfig(workspace_path=project.path)
+    if project.config_json:
+        try:
+            cfg_dict = json.loads(project.config_json)
+            if "permissions" in cfg_dict and isinstance(cfg_dict["permissions"], dict):
+                perm_dict = cfg_dict["permissions"]
+                if "workspace_path" not in perm_dict or not perm_dict["workspace_path"]:
+                    perm_dict["workspace_path"] = project.path
+                config = AgentPermissionConfig.model_validate(perm_dict)
+        except Exception:
+            pass
+
+    return permission_service.check(
+        action=level,
+        target_path=req.path,
+        config=config,
+        command=req.path if level == PermissionLevel.COMMAND_RUN else None
+    )
+
+
+@router.get("/{project_id}/tasks", response_model=List[TaskResponse])
+async def get_project_tasks(
+    project_id: str,
+    status: Optional[str] = Query(None, description="Filter by status"),
+    db: AsyncSession = Depends(get_db)
+):
+    """Returns list of tasks for a project, newest first."""
+    p_stmt = select(Project).where(Project.id == project_id)
+    p_res = await db.execute(p_stmt)
+    if not p_res.scalars().first():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Project not found with id: {project_id}"
+        )
+
+    query = select(Task).where(Task.project_id == project_id)
+    if status:
+        query = query.where(Task.status == status)
+    query = query.order_by(desc(Task.created_at))
+
+    result = await db.execute(query)
+    return result.scalars().all()
+

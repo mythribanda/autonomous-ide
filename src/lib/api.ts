@@ -17,7 +17,14 @@ import {
   CompiledSpec,
   Task,
   TaskCreateRequest,
+  TaskEvent,
+  TaskDetailResponse,
+  TaskReportResponse,
   GitStatusResponse,
+  GitStatus,
+  CheckpointResult,
+  RollbackResult,
+  GitLogEntry,
   GitCheckpointRequest,
   GitCheckpointResponse,
   GitRollbackRequest,
@@ -26,7 +33,10 @@ import {
   PromptCompileRequest,
   FileListResponse,
   FileReadResponse,
-  VerificationReport
+  VerificationReport,
+  AgentPermissionConfig,
+  PermissionResult,
+  PermissionCheckRequest
 } from '../types/api';
 import { PromptSpecification } from '../types';
 
@@ -317,9 +327,53 @@ export async function createTask(req: TaskCreateRequest): Promise<Task> {
   });
 }
 
+export async function getProjectTasks(projectId: string, status?: string): Promise<Task[]> {
+  const query = status ? `?status=${encodeURIComponent(status)}` : '';
+  return request<Task[]>(`/projects/${encodeURIComponent(projectId)}/tasks${query}`, {
+    method: 'GET'
+  });
+}
+
 export async function getTask(taskId: string): Promise<Task> {
   return request<Task>(`/tasks/${encodeURIComponent(taskId)}`, {
     method: 'GET'
+  });
+}
+
+export async function getTaskDetail(taskId: string): Promise<TaskDetailResponse> {
+  return request<TaskDetailResponse>(`/tasks/${encodeURIComponent(taskId)}`, {
+    method: 'GET'
+  });
+}
+
+export async function getTaskEvents(taskId: string, since?: string): Promise<TaskEvent[]> {
+  const query = since ? `?since=${encodeURIComponent(since)}` : '';
+  return request<TaskEvent[]>(`/tasks/${encodeURIComponent(taskId)}/events${query}`, {
+    method: 'GET'
+  });
+}
+
+export async function deleteTask(taskId: string): Promise<{ status: string; task_id: string; message: string }> {
+  return request<{ status: string; task_id: string; message: string }>(`/tasks/${encodeURIComponent(taskId)}`, {
+    method: 'DELETE'
+  });
+}
+
+export async function retryTask(taskId: string): Promise<Task> {
+  return request<Task>(`/tasks/${encodeURIComponent(taskId)}/retry`, {
+    method: 'POST'
+  });
+}
+
+export async function getTaskReport(taskId: string): Promise<TaskReportResponse> {
+  return request<TaskReportResponse>(`/tasks/${encodeURIComponent(taskId)}/report`, {
+    method: 'GET'
+  });
+}
+
+export async function denyAgentStep(taskId: string): Promise<{ task_id: string; denied: boolean }> {
+  return request<{ task_id: string; denied: boolean }>(`/agent/${encodeURIComponent(taskId)}/deny`, {
+    method: 'POST'
   });
 }
 
@@ -368,6 +422,51 @@ export async function getGitDiff(projectPath: string, filePath?: string): Promis
   });
 }
 
+export async function getProjectGitStatus(projectId: string): Promise<GitStatus> {
+  return request<GitStatus>(`/git/${encodeURIComponent(projectId)}/status`, {
+    method: 'GET'
+  });
+}
+
+export async function createProjectCheckpoint(projectId: string, message: string, taskId?: string): Promise<CheckpointResult> {
+  return request<CheckpointResult>(`/git/${encodeURIComponent(projectId)}/checkpoint`, {
+    method: 'POST',
+    body: JSON.stringify({ message, task_id: taskId })
+  });
+}
+
+export async function rollbackProjectCheckpoint(projectId: string, commitHash: string): Promise<RollbackResult> {
+  return request<RollbackResult>(`/git/${encodeURIComponent(projectId)}/rollback`, {
+    method: 'POST',
+    body: JSON.stringify({ commit_hash: commitHash })
+  });
+}
+
+export async function getProjectCheckpoints(projectId: string): Promise<GitCheckpointResponse[]> {
+  return request<GitCheckpointResponse[]>(`/git/${encodeURIComponent(projectId)}/checkpoints`, {
+    method: 'GET'
+  });
+}
+
+export async function getProjectLog(projectId: string, maxEntries: number = 20): Promise<GitLogEntry[]> {
+  return request<GitLogEntry[]>(`/git/${encodeURIComponent(projectId)}/log?max_entries=${maxEntries}`, {
+    method: 'GET'
+  });
+}
+
+export async function getProjectBranches(projectId: string): Promise<string[]> {
+  return request<string[]>(`/git/${encodeURIComponent(projectId)}/branches`, {
+    method: 'GET'
+  });
+}
+
+export async function createProjectBranch(projectId: string, name: string): Promise<{ success: boolean; branch: string }> {
+  return request<{ success: boolean; branch: string }>(`/git/${encodeURIComponent(projectId)}/branch`, {
+    method: 'POST',
+    body: JSON.stringify({ name })
+  });
+}
+
 export async function compilePrompt(req: PromptCompileRequest): Promise<PromptSpecification> {
   return request<PromptSpecification>('/prompt/compile', {
     method: 'POST',
@@ -389,6 +488,30 @@ export async function readFile(projectPath: string, filePath?: string): Promise<
   }
   return request<FileReadResponse>(`/fs/read?path=${encodeURIComponent(targetPath)}`, {
     method: 'GET'
+  });
+}
+
+export async function getProjectPermissions(projectId: string): Promise<AgentPermissionConfig> {
+  return request<AgentPermissionConfig>(`/projects/${encodeURIComponent(projectId)}/permissions`, {
+    method: 'GET'
+  });
+}
+
+export async function updateProjectPermissions(projectId: string, config: AgentPermissionConfig): Promise<AgentPermissionConfig> {
+  return request<AgentPermissionConfig>(`/projects/${encodeURIComponent(projectId)}/permissions`, {
+    method: 'PUT',
+    body: JSON.stringify(config)
+  });
+}
+
+export async function checkProjectPermission(projectId: string, action: string, path?: string): Promise<PermissionResult> {
+  const payload: PermissionCheckRequest = {
+    action,
+    path
+  };
+  return request<PermissionResult>(`/projects/${encodeURIComponent(projectId)}/permissions/check`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
   });
 }
 

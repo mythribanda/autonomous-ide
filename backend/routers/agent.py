@@ -283,6 +283,11 @@ async def approve_agent_step(task_id: str):
     approved = await agent_manager.approve_step(task_id)
     return {"task_id": task_id, "approved": approved}
 
+@router.post("/{task_id}/deny")
+async def deny_agent_step(task_id: str):
+    denied = await agent_manager.deny_step(task_id)
+    return {"task_id": task_id, "denied": denied}
+
 @router.post("/{task_id}/stop")
 async def stop_agent_by_id(task_id: str, db: AsyncSession = Depends(get_db)):
     stopped = await agent_manager.stop_execution(task_id)

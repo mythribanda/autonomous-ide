@@ -16,6 +16,7 @@ import {
   Settings,
   Radar,
   RefreshCw,
+  ListTodo,
   LucideIcon
 } from 'lucide-react';
 import { clsx } from 'clsx';
@@ -37,6 +38,7 @@ export const ActivityBar: React.FC = () => {
   const navItems: NavItem[] = [
     { id: 'home', label: 'Welcome', icon: Home },
     { id: 'explorer', label: 'Explorer', icon: FolderTree },
+    { id: 'tasks', label: 'Tasks & History', icon: ListTodo },
     { id: 'intelligence', label: 'Project Intelligence & Graph', icon: Network },
     { id: 'impact', label: 'Impact Analysis', icon: Radar },
     {

@@ -138,6 +138,7 @@ class ImpactAnalysisRequest(BaseModel):
 class TaskCreateRequest(BaseModel):
     project_id: str
     requirement: str
+    mode: Optional[str] = "Guided"
     compiled_spec_json: Optional[str] = None
 
 class TaskResponse(BaseModel):
@@ -166,6 +167,21 @@ class TaskEventResponse(BaseModel):
     event_type: str
     message: str
     data_json: Optional[str] = None
+
+class TaskDetailResponse(TaskResponse):
+    compiled_spec: Optional[Dict[str, Any]] = None
+    events: List[TaskEventResponse] = Field(default_factory=list)
+
+class TaskReportResponse(BaseModel):
+    task_id: str
+    requirement: str
+    status: str
+    phases: Dict[str, List[TaskEventResponse]] = Field(default_factory=dict)
+    verification_report: Optional[Dict[str, Any]] = None
+    git_checkpoint: Optional[Dict[str, Any]] = None
+    files_modified: List[str] = Field(default_factory=list)
+    metrics: Dict[str, Any] = Field(default_factory=dict)
+
 
 # Agent
 class AgentExecuteRequest(BaseModel):
@@ -214,6 +230,66 @@ class AgentCompileRequest(BaseModel):
     task_id: Optional[str] = None
 
 # Agent Tools & Permissions
+class PermissionLevel(str, Enum):
+    READ_ONLY = "READ_ONLY"
+    FILE_WRITE = "FILE_WRITE"
+    FILE_DELETE = "FILE_DELETE"
+    COMMAND_RUN = "COMMAND_RUN"
+    COMMAND_DANGEROUS = "COMMAND_DANGEROUS"
+    GIT_WRITE = "GIT_WRITE"
+    GIT_PUSH = "GIT_PUSH"
+    NETWORK = "NETWORK"
+
+
+class AgentPermissionConfig(BaseModel):
+    allowed: Set[PermissionLevel] = Field(
+        default_factory=lambda: {
+            PermissionLevel.READ_ONLY,
+            PermissionLevel.FILE_WRITE,
+            PermissionLevel.COMMAND_RUN,
+            PermissionLevel.GIT_WRITE,
+        }
+    )
+    workspace_path: str = "."
+    blocked_paths: List[str] = Field(default_factory=list)
+    max_files_per_task: int = 20
+    require_approval_for: List[PermissionLevel] = Field(
+        default_factory=lambda: [
+            PermissionLevel.FILE_DELETE,
+            PermissionLevel.COMMAND_DANGEROUS,
+            PermissionLevel.GIT_PUSH,
+        ]
+    )
+    auto_approve_test_commands: bool = True
+    auto_approve_build_commands: bool = True
+
+
+class PermissionResult(BaseModel):
+    allowed: bool
+    requires_approval: bool
+    reason: str
+
+
+class CommandClassification(BaseModel):
+    is_test: bool
+    is_build: bool
+    is_dangerous: bool
+    required_permission: PermissionLevel
+    risk_description: str
+
+
+class SecretMatch(BaseModel):
+    type: str
+    pattern: str
+    line_number: int
+    redacted_preview: str
+
+
+class PermissionCheckRequest(BaseModel):
+    action: str
+    path: Optional[str] = None
+
+
 class PermissionTag(str, Enum):
     READ_ONLY = "read_only"
     FILE_WRITE = "file_write"
@@ -392,6 +468,69 @@ class TerminalExecuteResponse(BaseModel):
     duration_ms: float
 
 # Git
+class GitStatus(BaseModel):
+    branch: str
+    is_clean: bool
+    modified_files: List[str] = Field(default_factory=list)
+    added_files: List[str] = Field(default_factory=list)
+    deleted_files: List[str] = Field(default_factory=list)
+    untracked_files: List[str] = Field(default_factory=list)
+    ahead_by: int = 0
+    behind_by: int = 0
+
+    # Backward compatibility with existing GitStatusResponse
+    project_path: Optional[str] = None
+    staged_files: Optional[List[str]] = None
+
+    model_config = ConfigDict(extra="ignore")
+
+
+class CheckpointResult(BaseModel):
+    commit_hash: str
+    files_staged: int
+    skipped: bool = False
+    message: Optional[str] = None
+    branch: Optional[str] = None
+    id: Optional[str] = None
+
+
+class FileDiff(BaseModel):
+    file_path: str
+    diff_text: str
+    lines_added: int
+    lines_removed: int
+    old_content: Optional[str] = None
+    new_content: Optional[str] = None
+
+
+class RollbackResult(BaseModel):
+    success: bool
+    files_restored: int = 0
+    message: str
+
+
+class GitLogEntry(BaseModel):
+    hash: str
+    short_hash: str
+    message: str
+    author: str
+    date: str
+    files_changed: int = 0
+
+
+class GitBranchCreateRequest(BaseModel):
+    name: str
+
+
+class GitCheckpointCreateBody(BaseModel):
+    message: str
+    task_id: Optional[str] = None
+
+
+class GitRollbackBody(BaseModel):
+    commit_hash: str
+
+
 class GitStatusResponse(BaseModel):
     project_path: str
     branch: str
@@ -399,6 +538,11 @@ class GitStatusResponse(BaseModel):
     modified_files: List[str]
     untracked_files: List[str]
     staged_files: List[str]
+    added_files: Optional[List[str]] = Field(default_factory=list)
+    deleted_files: Optional[List[str]] = Field(default_factory=list)
+    ahead_by: Optional[int] = 0
+    behind_by: Optional[int] = 0
+
 
 class GitCheckpointRequest(BaseModel):
     project_id: str
@@ -406,6 +550,8 @@ class GitCheckpointRequest(BaseModel):
     message: str
     type: Optional[str] = "ai_post_change"
     author: Optional[str] = "AutonomousDev Agent"
+    task_id: Optional[str] = None
+
 
 class GitCheckpointResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -418,15 +564,20 @@ class GitCheckpointResponse(BaseModel):
     type: str
     files_changed: int
     created_at: datetime
+    task_id: Optional[str] = None
+    is_autonomous: Optional[bool] = True
+
 
 class GitRollbackRequest(BaseModel):
     project_path: str
     commit_hash: str
 
+
 class GitRollbackResponse(BaseModel):
     success: bool
     message: str
     current_commit: str
+    files_restored: Optional[int] = 0
 
 # Health
 class HealthResponse(BaseModel):

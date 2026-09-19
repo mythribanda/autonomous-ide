@@ -13,10 +13,17 @@ import {
   ExternalLink
 } from 'lucide-react';
 import { Badge } from '../common/Badge';
+import { TaskReportData } from '../../types/api';
 
-export const TaskReport: React.FC = () => {
-  const { taskReport } = useAgentStore();
+export interface TaskReportProps {
+  report?: TaskReportData | null;
+}
+
+export const TaskReport: React.FC<TaskReportProps> = ({ report: propReport }) => {
+  const { taskReport: storeReport } = useAgentStore();
   const { setActiveView } = useUIStore();
+
+  const taskReport = propReport !== undefined ? propReport : storeReport;
 
   if (!taskReport) return null;
 

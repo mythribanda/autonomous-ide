@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
+from typing import Optional
 import uuid
-from sqlalchemy import String, Integer, DateTime, ForeignKey
+from sqlalchemy import String, Integer, Boolean, DateTime, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
 from backend.database import Base
 
@@ -21,4 +22,6 @@ class GitCheckpoint(Base):
     author: Mapped[str] = mapped_column(String(255), default="AutonomousDev Agent", nullable=False)
     type: Mapped[str] = mapped_column(String(50), default="ai_post_change", nullable=False)
     files_changed: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    task_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    is_autonomous: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, index=True)

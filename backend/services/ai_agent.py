@@ -225,8 +225,8 @@ class AutonomousAgent:
                     ))
 
         state.plan = steps
-        await event_emitter("planning_complete", f"Synthesized plan with {len(steps)} steps", {
-            "type": "planning_complete",
+        await event_emitter("plan_created", f"Synthesized plan with {len(steps)} steps", {
+            "type": "plan_created",
             "steps": [s.model_dump(mode="json") for s in steps]
         })
 
@@ -273,8 +273,8 @@ class AutonomousAgent:
             # Human Approval Gating
             if result.requires_approval:
                 state.status = AgentStatus.WAITING_APPROVAL
-                await event_emitter("waiting_approval", f"Action requires user approval: {step.tool}", {
-                    "type": "waiting_approval",
+                await event_emitter("approval_requested", f"Action requires user approval: {step.tool}", {
+                    "type": "approval_requested",
                     "step_id": step.step_id,
                     "tool": step.tool,
                     "args": step.tool_args,
@@ -315,12 +315,19 @@ class AutonomousAgent:
                     if modified_path and modified_path not in state.files_modified:
                         state.files_modified.append(modified_path)
 
-                await event_emitter("step_done", f"Completed {step.step_id}", {
-                    "type": "step_done",
+                await event_emitter("step_complete", f"Completed {step.step_id}", {
+                    "type": "step_complete",
                     "step_id": step.step_id,
                     "output_summary": out_summary
                 })
                 continue
+
+            # Step failed before recovery
+            await event_emitter("step_failed", f"Step {step.step_id} failed: {result.error}", {
+                "type": "step_failed",
+                "step_id": step.step_id,
+                "error": str(result.error)
+            })
 
             # ===============================================================
             # PHASE 3 — RECOVERY (if a step fails)
@@ -416,8 +423,8 @@ class AutonomousAgent:
                         repair_action=repair_action,
                         success=True
                     ))
-                    await event_emitter("recovery_success", f"Step {step.step_id} recovered successfully", {
-                        "type": "recovery_success",
+                    await event_emitter("recovery_complete", f"Step {step.step_id} recovered successfully", {
+                        "type": "recovery_complete",
                         "attempt_number": state.error_count,
                         "step_id": step.step_id
                     })
@@ -437,8 +444,8 @@ class AutonomousAgent:
                 step.status = "failed"
                 step.result = result
                 state.status = AgentStatus.FAILED
-                await event_emitter("fatal_error", f"Max recovery attempts ({MAX_RECOVERY_ATTEMPTS}) reached for {step.step_id}", {
-                    "type": "fatal_error",
+                await event_emitter("step_failed", f"Max recovery attempts ({MAX_RECOVERY_ATTEMPTS}) reached for {step.step_id}", {
+                    "type": "step_failed",
                     "step_id": step.step_id,
                     "error": result.error
                 })
@@ -460,8 +467,8 @@ class AutonomousAgent:
         })
 
         verification_report = await VerificationService.verify(state, workspace_path=workspace_path)
-        await event_emitter("verification_results", verification_report.summary, {
-            "type": "verification_results",
+        await event_emitter("verification_run", verification_report.summary, {
+            "type": "verification_run",
             "passed": verification_report.passed,
             "checks": verification_report.checks,
             "summary": verification_report.summary
@@ -514,6 +521,7 @@ class AIAgentManager:
         self.states: Dict[str, AgentState] = {}
         self.active_tasks: Dict[str, asyncio.Task] = {}
         self.approval_events: Dict[str, asyncio.Event] = {}
+        self.approval_decision: Dict[str, bool] = {}
         self.pause_events: Dict[str, asyncio.Event] = {}
         self.paused_tasks: Set[str] = set()
         self.cancelled_tasks: Set[str] = set()
@@ -613,9 +621,21 @@ class AIAgentManager:
 
     async def approve_step(self, task_id: str) -> bool:
         """Approves a currently waiting tool execution step."""
+        self.approval_decision[task_id] = True
         ev = self.approval_events.get(task_id)
         if ev:
             ev.set()
+            await self.broadcast_event(task_id, "approval_granted", "Tool execution approved by user", {"type": "approval_granted"})
+            return True
+        return False
+
+    async def deny_step(self, task_id: str) -> bool:
+        """Denies a currently waiting tool execution step."""
+        self.approval_decision[task_id] = False
+        ev = self.approval_events.get(task_id)
+        if ev:
+            ev.set()
+            await self.broadcast_event(task_id, "approval_denied", "Tool execution denied by user", {"type": "approval_denied"})
             return True
         return False
 
@@ -660,7 +680,7 @@ class AIAgentManager:
             self.states[task_id].status = AgentStatus.CANCELLED
 
         await self._update_task_db_status(task_id, {"status": "cancelled"})
-        await self.broadcast_event(task_id, "TASK_STOPPED", "Agent execution halted by emergency stop", {"type": "TASK_STOPPED"})
+        await self.broadcast_event(task_id, "agent_stopped", "Agent execution halted by emergency stop", {"type": "agent_stopped"})
         return True
 
     def get_state(self, task_id: str) -> Optional[AgentState]:
@@ -759,8 +779,15 @@ class AIAgentManager:
                 async def approval_gate(tid: str, step: AgentStep) -> bool:
                     ev = asyncio.Event()
                     self.approval_events[tid] = ev
+                    await self.broadcast_event(tid, "approval_requested", f"Action requires user approval: {step.tool}", {
+                        "type": "approval_requested",
+                        "step_id": step.step_id,
+                        "tool": step.tool,
+                        "args": step.tool_args
+                    })
                     await ev.wait()
-                    return tid not in self.cancelled_tasks
+                    approved = self.approval_decision.pop(tid, True)
+                    return approved and (tid not in self.cancelled_tasks)
 
                 async def pause_check(tid: str):
                     await self.wait_if_paused(tid)
@@ -790,20 +817,20 @@ class AIAgentManager:
 
                 await self.broadcast_event(
                     task_id,
-                    "TASK_COMPLETED" if result.success else "TASK_FAILED",
+                    "task_complete" if result.success else "task_failed",
                     f"Agent run concluded with status {result.final_status}",
                     result.model_dump(mode="json")
                 )
             except asyncio.CancelledError:
                 state.status = AgentStatus.CANCELLED
                 await self._update_task_db_status(task_id, {"status": "cancelled"})
-                await self.broadcast_event(task_id, "TASK_STOPPED", "Task cancelled", {"type": "TASK_STOPPED"})
+                await self.broadcast_event(task_id, "agent_stopped", "Task cancelled", {"type": "agent_stopped"})
             except Exception as e:
                 logger.error(f"Fatal error in agent run loop for task {task_id}: {e}", exc_info=True)
                 state.status = AgentStatus.FAILED
                 await self._update_task_db_status(task_id, {"status": "failed"})
-                await self.broadcast_event(task_id, "TASK_ERROR", f"Agent execution runtime exception: {str(e)}", {
-                    "type": "TASK_ERROR",
+                await self.broadcast_event(task_id, "task_failed", f"Agent execution runtime exception: {str(e)}", {
+                    "type": "task_failed",
                     "error": str(e)
                 })
             finally:

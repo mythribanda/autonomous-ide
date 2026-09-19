@@ -22,8 +22,20 @@ interface FormattedEvent {
   raw: AgentEvent;
 }
 
-export const ActivityTimeline: React.FC = () => {
-  const { events, agentStatus } = useAgentStore();
+export interface ActivityTimelineProps {
+  events?: AgentEvent[];
+  agentStatus?: string;
+  showHeader?: boolean;
+}
+
+export const ActivityTimeline: React.FC<ActivityTimelineProps> = ({
+  events: propEvents,
+  agentStatus: propStatus,
+  showHeader = true
+}) => {
+  const storeState = useAgentStore();
+  const events = propEvents !== undefined ? propEvents : storeState.events;
+  const agentStatus = propStatus !== undefined ? propStatus : storeState.agentStatus;
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -36,12 +48,13 @@ export const ActivityTimeline: React.FC = () => {
       ? rawTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
       : new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
 
-    const evType = event.type || event.data?.type || '';
+    const evType = (event.type || event.event_type || event.data?.type || '').toLowerCase();
     const d = event.data || {};
 
     switch (evType) {
+      case 'plan_created':
       case 'planning_complete':
-      case 'PLAN_GENERATED': {
+      case 'plan_generated': {
         const count = d.steps ? (Array.isArray(d.steps) ? d.steps.length : 0) : 0;
         return {
           timeStr,
@@ -68,6 +81,7 @@ export const ActivityTimeline: React.FC = () => {
         };
       }
 
+      case 'step_complete':
       case 'step_done': {
         const desc = d.description || event.message || 'Step finished';
         return {
@@ -121,6 +135,7 @@ export const ActivityTimeline: React.FC = () => {
         };
       }
 
+      case 'recovery_complete':
       case 'recovery_success': {
         const n = d.attempt_number || 1;
         return {
@@ -134,6 +149,7 @@ export const ActivityTimeline: React.FC = () => {
         };
       }
 
+      case 'approval_requested':
       case 'waiting_approval': {
         const tool = d.tool || 'Operation';
         return {
@@ -143,6 +159,30 @@ export const ActivityTimeline: React.FC = () => {
           colorClass: 'text-amber-300 font-semibold',
           borderClass: 'border-amber-600/60',
           bgClass: 'bg-amber-950/40',
+          raw: event
+        };
+      }
+
+      case 'approval_granted': {
+        return {
+          timeStr,
+          icon: <CheckCircle2 size={13} className="text-emerald-400" />,
+          text: 'User approved tool execution',
+          colorClass: 'text-emerald-300',
+          borderClass: 'border-emerald-900/40',
+          bgClass: 'bg-emerald-950/20',
+          raw: event
+        };
+      }
+
+      case 'approval_denied': {
+        return {
+          timeStr,
+          icon: <XCircle size={13} className="text-rose-400" />,
+          text: 'User denied tool execution',
+          colorClass: 'text-rose-300',
+          borderClass: 'border-rose-900/40',
+          bgClass: 'bg-rose-950/20',
           raw: event
         };
       }
@@ -159,6 +199,7 @@ export const ActivityTimeline: React.FC = () => {
         };
       }
 
+      case 'verification_run':
       case 'verification_results': {
         const passed = d.passed !== undefined ? d.passed : true;
         return {
@@ -185,8 +226,8 @@ export const ActivityTimeline: React.FC = () => {
         };
       }
 
-      case 'TASK_COMPLETED':
-      case 'task_complete': {
+      case 'task_complete':
+      case 'task_completed': {
         return {
           timeStr,
           icon: <CheckCircle2 size={13} className="text-emerald-400" />,
@@ -198,7 +239,7 @@ export const ActivityTimeline: React.FC = () => {
         };
       }
 
-      case 'TASK_STOPPED':
+      case 'agent_stopped':
       case 'task_stopped': {
         return {
           timeStr,
@@ -211,13 +252,13 @@ export const ActivityTimeline: React.FC = () => {
         };
       }
 
-      case 'fatal_error':
-      case 'TASK_FAILED': {
+      case 'task_failed':
+      case 'fatal_error': {
         const err = d.error || event.message || 'Execution error';
         return {
           timeStr,
           icon: <XCircle size={13} className="text-rose-400" />,
-          text: `Fatal Error: ${err}`,
+          text: `Execution failed: ${err}`,
           colorClass: 'text-rose-200 font-bold',
           borderClass: 'border-rose-700/60',
           bgClass: 'bg-rose-950/40',
@@ -242,29 +283,31 @@ export const ActivityTimeline: React.FC = () => {
   return (
     <div className="flex flex-col h-full bg-[#181818] border border-[#2B2B2B] rounded-sm overflow-hidden select-none font-sans text-xs">
       {/* Header */}
-      <div className="h-8 px-3 bg-[#1F1F1F] border-b border-[#2B2B2B] flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-2">
-          <Terminal size={13} className="text-[#007ACC]" />
-          <span className="font-semibold text-xs text-white uppercase tracking-wider font-mono">
-            ACTIVITY TIMELINE
-          </span>
-          <span className="text-[10px] text-zinc-500 font-mono">
-            ({events.length} events)
-          </span>
+      {showHeader && (
+        <div className="h-8 px-3 bg-[#1F1F1F] border-b border-[#2B2B2B] flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-2">
+            <Terminal size={13} className="text-[#007ACC]" />
+            <span className="font-semibold text-xs text-white uppercase tracking-wider font-mono">
+              ACTIVITY TIMELINE
+            </span>
+            <span className="text-[10px] text-zinc-500 font-mono">
+              ({events.length} events)
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className={`w-2 h-2 rounded-full ${
+              agentStatus === 'executing' ? 'bg-emerald-400 animate-pulse' :
+              agentStatus === 'recovering' ? 'bg-amber-400 animate-pulse' :
+              agentStatus === 'verifying' ? 'bg-indigo-400 animate-pulse' :
+              agentStatus === 'paused' ? 'bg-amber-500' :
+              agentStatus === 'error' ? 'bg-rose-500' : 'bg-zinc-600'
+            }`} />
+            <span className="text-[10px] font-mono uppercase text-zinc-400">
+              {agentStatus}
+            </span>
+          </div>
         </div>
-        <div className="flex items-center gap-1.5">
-          <span className={`w-2 h-2 rounded-full ${
-            agentStatus === 'executing' ? 'bg-emerald-400 animate-pulse' :
-            agentStatus === 'recovering' ? 'bg-amber-400 animate-pulse' :
-            agentStatus === 'verifying' ? 'bg-indigo-400 animate-pulse' :
-            agentStatus === 'paused' ? 'bg-amber-500' :
-            agentStatus === 'error' ? 'bg-rose-500' : 'bg-zinc-600'
-          }`} />
-          <span className="text-[10px] font-mono uppercase text-zinc-400">
-            {agentStatus}
-          </span>
-        </div>
-      </div>
+      )}
 
       {/* Events Container */}
       <div className="flex-1 overflow-y-auto p-2 space-y-1.5 min-h-[140px]">

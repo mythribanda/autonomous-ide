@@ -3,6 +3,7 @@ import { useProjectStore } from '../../stores/projectStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useUIStore } from '../../stores/uiStore';
 import { useGitStore } from '../../stores/gitStore';
+import { AutonomyControls } from '../Controls/AutonomyControls';
 import {
   Cpu,
   GitBranch,
@@ -132,6 +133,9 @@ export const TopBar: React.FC = () => {
           <span className="text-[#CCCCCC]">8.2k</span>
           <span className="text-[#858585]">/ 32k</span>
         </div>
+
+        {/* Autonomy controls: mode selector + pause/stop/resume */}
+        <AutonomyControls />
 
         <div className="relative">
           <button

@@ -20,6 +20,9 @@ import { CommandPalette } from '../common/CommandPalette';
 import { ToastContainer } from '../common/Toast';
 import { PromptBar } from '../PromptBar/PromptBar';
 import { ApprovalDialog } from '../agent/ApprovalDialog';
+import { TaskHistory } from '../Tasks/TaskHistory';
+import { TaskList } from '../Tasks/TaskList';
+import { EmergencyStop } from '../Controls/EmergencyStop';
 
 export const AppShell: React.FC = () => {
   const {
@@ -35,6 +38,8 @@ export const AppShell: React.FC = () => {
     switch (activeView) {
       case 'home':
         return <WelcomeScreen />;
+      case 'tasks':
+        return <TaskHistory />;
       case 'intelligence':
         return <ProjectIntelligenceView />;
       case 'impact':
@@ -63,8 +68,8 @@ export const AppShell: React.FC = () => {
         {/* 2. Left Activity Bar */}
         <ActivityBar />
 
-        {/* 3. Left File Explorer (Shown when in 'explorer' view) */}
-        {activeView === 'explorer' && (
+        {/* 3. Left File Explorer or Tasks Panel */}
+        {(activeView === 'explorer' || activeView === 'tasks') && (
           <ResizablePanel
             direction="horizontal"
             position="left"
@@ -73,7 +78,13 @@ export const AppShell: React.FC = () => {
             maxSize={450}
             onResize={setExplorerWidth}
           >
-            <Explorer />
+            {activeView === 'tasks' ? (
+              <div className="h-full flex flex-col bg-[#181818] border-r border-[#2B2B2B]">
+                <TaskList isCollapsible={false} defaultExpanded={true} className="h-full" />
+              </div>
+            ) : (
+              <Explorer />
+            )}
           </ResizablePanel>
         )}
 
@@ -113,6 +124,7 @@ export const AppShell: React.FC = () => {
       <SettingsModal />
       <ToastContainer />
       <ApprovalDialog />
+      <EmergencyStop />
     </div>
   );
 };

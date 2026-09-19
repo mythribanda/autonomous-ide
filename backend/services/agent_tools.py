@@ -581,11 +581,11 @@ async def git_checkpoint(call: ToolCall, workspace_path: str = ".", permissions:
         ws = call.args.get("workspace_path", workspace_path)
         message = call.args.get("message", "Auto-checkpoint")
         formatted_message = f"CHECKPOINT: {message}"
-        res = git_service.create_checkpoint(ws, formatted_message)
+        res = await git_service.create_checkpoint(ws, message)
         output = {
-            "commit_hash": res.get("commit_hash", ""),
+            "commit_hash": res.commit_hash,
             "message": formatted_message,
-            "files_changed": res.get("files_changed", 0),
+            "files_changed": res.files_staged,
         }
         return ToolResult(success=True, output=output)
     except Exception as e:
@@ -607,15 +607,7 @@ async def git_diff(call: ToolCall, workspace_path: str = ".", permissions: Optio
             )
 
         ws = call.args.get("workspace_path", workspace_path)
-        staged = bool(call.args.get("staged", False))
-        repo = git_service._get_repo(ws)
-        if not repo:
-            return ToolResult(success=False, error="Git repository not found in workspace")
-
-        if staged:
-            diff_str = repo.git.diff("--cached") if repo.head.is_valid() else repo.git.diff("--cached")
-        else:
-            diff_str = repo.git.diff()
+        diff_str = await git_service.get_diff(ws)
         return ToolResult(success=True, output={"diff": diff_str})
     except Exception as e:
         return ToolResult(success=False, error=f"Failed to get git diff: {str(e)}")
@@ -640,13 +632,10 @@ async def git_rollback(call: ToolCall, workspace_path: str = ".", permissions: O
         if not commit_hash:
             return ToolResult(success=False, error="Argument 'commit_hash' is required")
 
-        git_service.rollback(ws, commit_hash)
-        repo = git_service._get_repo(ws)
-        curr = repo.head.commit.hexsha if repo and repo.head.is_valid() else commit_hash
-        return ToolResult(
-            success=True,
-            output={"success": True, "current_commit": curr}
-        )
+        res = await git_service.rollback_to_checkpoint(ws, commit_hash)
+        if not res.success:
+            return ToolResult(success=False, error=res.message)
+        return ToolResult(success=True, output={"success": True, "current_commit": commit_hash, "files_restored": res.files_restored})
     except Exception as e:
         return ToolResult(success=False, error=f"Failed to rollback git: {str(e)}")
 

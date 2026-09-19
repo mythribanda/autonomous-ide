@@ -19,6 +19,7 @@ import {
   createTask as apiCreateTask,
   openProject as apiOpenProject,
   approveAgentStep as apiApproveAgentStep,
+  denyAgentStep as apiDenyAgentStep,
   pauseAgentTask as apiPauseAgentTask,
   resumeAgentTask as apiResumeAgentTask,
   stopAgentTask as apiStopAgentTask,
@@ -46,6 +47,7 @@ export interface AgentStoreState {
 
   startExecution: (taskId: string, prompt?: string, autonomyLevel?: AutonomyLevel) => Promise<void>;
   approveStep: (allowSession?: boolean) => Promise<void>;
+  denyStep: () => Promise<void>;
   stopAgent: () => Promise<void>;
   pauseAgent: () => Promise<void>;
   resumeAgent: () => Promise<void>;
@@ -232,7 +234,9 @@ export const useAgentStore = create<AgentStoreState>((set, get) => ({
           break;
         }
 
-        case 'waiting_approval': {
+        case 'waiting_approval':
+        case 'approval_requested': {
+          updatedStatus = 'waiting_approval';
           const toolName = event.data?.tool || 'unknown_tool';
           if (sessionApprovedTools.has(toolName) && state.taskId) {
             apiApproveAgentStep(state.taskId).catch((err) =>
@@ -247,6 +251,27 @@ export const useAgentStore = create<AgentStoreState>((set, get) => ({
               message: event.message || event.data?.error
             };
           }
+          break;
+        }
+
+        case 'approval_granted': {
+          updatedStatus = 'executing';
+          approvalReq = null;
+          break;
+        }
+
+        case 'approval_denied': {
+          approvalReq = null;
+          break;
+        }
+
+        case 'task_paused': {
+          updatedStatus = 'paused';
+          break;
+        }
+
+        case 'task_resumed': {
+          updatedStatus = 'executing';
           break;
         }
 
@@ -385,7 +410,8 @@ export const useAgentStore = create<AgentStoreState>((set, get) => ({
         }
 
         case 'TASK_STOPPED':
-        case 'task_stopped': {
+        case 'task_stopped':
+        case 'agent_stopped': {
           updatedStatus = 'idle';
           updatedActiveTool = null;
           approvalReq = null;
@@ -538,6 +564,17 @@ export const useAgentStore = create<AgentStoreState>((set, get) => ({
 
   dismissApproval: () => {
     set({ approvalRequest: null });
+  },
+
+  denyStep: async () => {
+    const { taskId } = get();
+    if (!taskId) return;
+    try {
+      await apiDenyAgentStep(taskId);
+      set({ approvalRequest: null });
+    } catch (err) {
+      console.error('Failed to deny step:', err);
+    }
   },
 
   stopAgent: async () => {
