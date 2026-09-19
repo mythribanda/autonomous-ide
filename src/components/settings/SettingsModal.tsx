@@ -9,6 +9,7 @@ import {
   Palette,
   Check
 } from 'lucide-react';
+import { ModelSettings } from './ModelSettings';
 
 export const SettingsModal: React.FC = () => {
   const { settings, isSettingsOpen, closeSettings, updateSettings } = useSettingsStore();
@@ -66,115 +67,8 @@ export const SettingsModal: React.FC = () => {
 
         {/* Tab Content */}
         <div className="flex-1 space-y-4">
-          {activeTab === 'ai' && (
-            <div className="space-y-3.5">
-              {/* Provider Selection */}
-              <div>
-                <label className="text-[10px] text-[#858585] uppercase tracking-wider block mb-1 font-mono">
-                  AI RUNTIME PROVIDER
-                </label>
-                <div className="grid grid-cols-2 gap-2.5">
-                  <div
-                    onClick={() => updateSettings({ aiProvider: 'local' })}
-                    className={`p-3 rounded-sm border cursor-pointer transition-all ${
-                      settings.aiProvider === 'local'
-                        ? 'bg-[#252526] border-[#007ACC]'
-                        : 'bg-[#181818] border-[#2B2B2B] hover:border-[#3C3C3C]'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="font-semibold text-[#FFFFFF]">Local Runtime</span>
-                      <Badge variant="emerald" size="xs">Recommended</Badge>
-                    </div>
-                    <p className="text-[11px] text-[#858585] mt-1">
-                      Ollama / LMStudio running on your local machine with zero data egress.
-                    </p>
-                  </div>
+          {activeTab === 'ai' && <ModelSettings />}
 
-                  <div
-                    onClick={() => updateSettings({ aiProvider: 'cloud' })}
-                    className={`p-3 rounded-sm border cursor-pointer transition-all ${
-                      settings.aiProvider === 'cloud'
-                        ? 'bg-[#252526] border-[#007ACC]'
-                        : 'bg-[#181818] border-[#2B2B2B] hover:border-[#3C3C3C]'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="font-semibold text-[#FFFFFF]">Cloud API</span>
-                      <Badge variant="default" size="xs">Hybrid</Badge>
-                    </div>
-                    <p className="text-[11px] text-[#858585] mt-1">
-                      Connect to high-parameter reasoning models via API keys.
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Model Selection */}
-              <div>
-                <label className="text-[10px] text-[#858585] uppercase tracking-wider block mb-1 font-mono">
-                  AVAILABLE LOCAL MODELS
-                </label>
-                <div className="space-y-1.5">
-                  {models.map((m) => {
-                    const isSelected = settings.model === m.name;
-                    return (
-                      <div
-                        key={m.name}
-                        onClick={() => updateSettings({ model: m.name, ramEstimateGb: m.ram, contextLimit: m.context })}
-                        className={`p-2.5 rounded-sm border cursor-pointer transition-all flex items-center justify-between ${
-                          isSelected
-                            ? 'bg-[#264F78] border-[#007ACC] text-[#FFFFFF]'
-                            : 'bg-[#181818] border-[#2B2B2B] hover:bg-[#252526] text-[#CCCCCC]'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2.5">
-                          <div className={`w-3.5 h-3.5 rounded-xs border flex items-center justify-center ${
-                            isSelected ? 'border-[#007ACC] bg-[#007ACC] text-[#FFFFFF]' : 'border-[#858585]'
-                          }`}>
-                            {isSelected && <Check size={10} className="stroke-[3]" />}
-                          </div>
-                          <div>
-                            <div className="font-medium text-xs text-[#FFFFFF]">{m.name}</div>
-                            <div className={`text-[10px] font-mono ${isSelected ? 'text-[#CCCCCC]' : 'text-[#858585]'}`}>
-                              {m.type}
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-3 text-right">
-                          <div>
-                            <span className={`text-[10px] block ${isSelected ? 'text-[#CCCCCC]' : 'text-[#858585]'}`}>
-                              Est. RAM
-                            </span>
-                            <span className="font-mono text-xs">{m.ram > 0 ? `~${m.ram} GB` : 'Cloud'}</span>
-                          </div>
-                          <div>
-                            <span className={`text-[10px] block ${isSelected ? 'text-[#CCCCCC]' : 'text-[#858585]'}`}>
-                              Context
-                            </span>
-                            <span className="font-mono text-xs">{(m.context / 1024).toFixed(0)}k</span>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Resource Diagnostics */}
-              <div className="p-3 rounded-sm bg-[#181818] border border-[#2B2B2B] space-y-1.5 font-mono text-xs">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] text-[#858585] uppercase">Local AI Status</span>
-                  <Badge variant="emerald" size="xs" dot>Connected (127.0.0.1:11434)</Badge>
-                </div>
-                <div className="grid grid-cols-2 gap-2 text-[11px] pt-1 border-t border-[#2B2B2B]">
-                  <div>Allocated VRAM: <span className="text-[#89D185]">4.8 GB / 16.0 GB</span></div>
-                  <div>Inference Latency: <span className="text-[#3794FF]">34 tokens/sec</span></div>
-                </div>
-              </div>
-            </div>
-          )}
 
           {activeTab === 'workspace' && (
             <div className="space-y-3">

@@ -33,6 +33,7 @@ import {
   Clock,
   FileCode
 } from 'lucide-react';
+import { CIStatus, GithubIcon } from '../GitHub';
 import { clsx } from 'clsx';
 
 export const ProjectDashboard: React.FC = () => {
@@ -340,6 +341,19 @@ export const ProjectDashboard: React.FC = () => {
                 <span className={clsx('w-1.5 h-1.5 rounded-full', isClean ? 'bg-green-400' : 'bg-amber-400')} />
                 {isClean ? 'Clean' : `${uncommittedCount} uncommitted`}
               </span>
+
+              {/* GitHub Actions CI Status */}
+              <CIStatus compact={true} />
+
+              {/* GitHub Panel Link */}
+              <button
+                onClick={() => setActiveView('github')}
+                className="px-2.5 py-1 rounded-full text-xs font-medium bg-[#252526] hover:bg-[#2A2D2E] border border-[#2B2B2B] text-[#CCCCCC] hover:text-white flex items-center gap-1.5 transition-colors cursor-pointer"
+                title="Open GitHub Panel"
+              >
+                <GithubIcon className="w-3.5 h-3.5" />
+                <span>GitHub</span>
+              </button>
             </div>
           </div>
 

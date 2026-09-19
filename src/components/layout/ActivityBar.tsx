@@ -19,14 +19,16 @@ import {
   ListTodo,
   LayoutDashboard,
   GraduationCap,
+  Brain,
   LucideIcon
 } from 'lucide-react';
+import { GithubIcon } from '../GitHub';
 import { clsx } from 'clsx';
 
 interface NavItem {
   id: ActivityView;
   label: string;
-  icon: LucideIcon;
+  icon: LucideIcon | React.ComponentType<{ size?: number; className?: string }>;
   badge?: string;
   isBottom?: boolean;
   onClickCustom?: () => void;
@@ -57,6 +59,7 @@ export const ActivityBar: React.FC = () => {
     { id: 'verification', label: 'Testing & Verification', icon: CheckCircle2, badge: '42' },
     { id: 'recovery', label: 'Self-Recovery Timeline', icon: RefreshCw },
     { id: 'git', label: 'Source Control & Git', icon: GitBranch },
+    { id: 'github', label: 'GitHub & Remote Repos', icon: GithubIcon },
     {
       id: 'terminal',
       label: 'Terminal & Output',
@@ -65,6 +68,7 @@ export const ActivityBar: React.FC = () => {
     },
     { id: 'security', label: 'Security & Permissions', icon: ShieldCheck },
     { id: 'evaluation', label: 'Research & Evaluation', icon: GraduationCap },
+    { id: 'memory', label: 'Project Memory & Knowledge', icon: Brain },
     {
       id: 'settings',
       label: 'Settings',

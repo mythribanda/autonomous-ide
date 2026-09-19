@@ -1,8 +1,14 @@
 import re
+import json
 from pathlib import Path
+from datetime import datetime, timezone
 from typing import List, Dict, Set, Optional, Tuple, Any
 from collections import defaultdict
 
+from sqlalchemy import select, delete
+
+from backend.database import AsyncSessionLocal
+from backend.models.project import AgentMemory
 from backend.schemas import (
     FileAnalysis,
     ProjectScanResult,
@@ -529,3 +535,384 @@ class KnowledgeGraph:
 
 
 knowledge_graph = KnowledgeGraph()
+
+
+class ProjectMemory:
+    """
+    Project Memory System:
+    Persists architectural decisions, bug fixes, requirements, and codebase knowledge
+    across sessions. Integrates directly with the autonomous agent execution cycle.
+    """
+
+    def __init__(self):
+        pass
+
+    @staticmethod
+    def _extract_keywords(text: str) -> Set[str]:
+        """Tokenizes text into lowercase alphanumeric keywords excluding stop words."""
+        if not text:
+            return set()
+        tokens = re.findall(r"[a-zA-Z0-9_\-]+", text.lower())
+        return {t for t in tokens if len(t) > 2 and t not in STOP_WORDS}
+
+    @staticmethod
+    def _serialize_content(summary: str, details: Dict[str, Any]) -> str:
+        """Serializes memory data as JSON with a fallback readable summary."""
+        payload = {
+            "summary": summary,
+            **details
+        }
+        return json.dumps(payload, ensure_ascii=False)
+
+    @staticmethod
+    def parse_memory(memory: AgentMemory) -> Dict[str, Any]:
+        """Parses an AgentMemory record into a unified dictionary format."""
+        raw = memory.content or ""
+        created_iso = memory.created_at.isoformat() if memory.created_at else ""
+
+        # Try parsing JSON payload
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, dict):
+                return {
+                    "id": memory.id,
+                    "project_id": memory.project_id,
+                    "memory_type": memory.memory_type,
+                    "created_at": created_iso,
+                    "summary": parsed.get("summary", raw),
+                    "tags": parsed.get("tags", []),
+                    "task_id": parsed.get("task_id"),
+                    "details": parsed
+                }
+        except Exception:
+            pass
+
+        # Plain text fallback
+        return {
+            "id": memory.id,
+            "project_id": memory.project_id,
+            "memory_type": memory.memory_type,
+            "created_at": created_iso,
+            "summary": raw,
+            "tags": [memory.memory_type],
+            "task_id": None,
+            "details": {"summary": raw}
+        }
+
+    async def store_architecture_decision(
+        self,
+        project_id: str,
+        decision: str,
+        context: str,
+        task_id: Optional[str] = None,
+        tags: Optional[List[str]] = None
+    ) -> AgentMemory:
+        """
+        Stores an architectural decision.
+        Example: "We chose to use Zustand over Redux because [context]"
+        """
+        summary = f"Decision: {decision}"
+        if context:
+            summary += f" — Context: {context}"
+
+        def_tags = tags or ["architecture", "decision"]
+        if "architecture" not in def_tags:
+            def_tags.append("architecture")
+
+        content_str = self._serialize_content(summary, {
+            "decision": decision,
+            "context": context,
+            "task_id": task_id,
+            "tags": def_tags
+        })
+
+        async with AsyncSessionLocal() as session:
+            mem = AgentMemory(
+                project_id=project_id,
+                memory_type="decision",
+                content=content_str,
+                created_at=datetime.now(timezone.utc)
+            )
+            session.add(mem)
+            await session.commit()
+            await session.refresh(mem)
+
+        await self.prune_old_memories(project_id, keep_last_n=100, memory_type="decision")
+        return mem
+
+    async def store_bug_fix(
+        self,
+        project_id: str,
+        bug: str,
+        fix: str,
+        affected_files: Optional[List[str]] = None,
+        task_id: Optional[str] = None
+    ) -> AgentMemory:
+        """
+        Stores a diagnosed and resolved bug fix with affected files.
+        Example: "Fixed null pointer in auth middleware by adding null check before user lookup"
+        """
+        summary = f"Fixed: {bug} — Resolution: {fix}"
+        content_str = self._serialize_content(summary, {
+            "bug": bug,
+            "fix": fix,
+            "affected_files": affected_files or [],
+            "task_id": task_id,
+            "tags": ["bugfix", "recovery"]
+        })
+
+        async with AsyncSessionLocal() as session:
+            mem = AgentMemory(
+                project_id=project_id,
+                memory_type="bug",
+                content=content_str,
+                created_at=datetime.now(timezone.utc)
+            )
+            session.add(mem)
+            await session.commit()
+            await session.refresh(mem)
+
+        await self.prune_old_memories(project_id, keep_last_n=100, memory_type="bug")
+        return mem
+
+    async def store_requirement(
+        self,
+        project_id: str,
+        requirement: str,
+        spec: Any,
+        task_id: Optional[str] = None
+    ) -> AgentMemory:
+        """Stores a completed requirement specification."""
+        intent = "feature"
+        acceptance = []
+        if hasattr(spec, "intent") and spec.intent:
+            intent = spec.intent
+        elif isinstance(spec, dict) and spec.get("intent"):
+            intent = spec["intent"]
+
+        if hasattr(spec, "acceptance_criteria") and spec.acceptance_criteria:
+            acceptance = list(spec.acceptance_criteria)
+        elif isinstance(spec, dict) and spec.get("acceptance_criteria"):
+            acceptance = spec["acceptance_criteria"]
+
+        summary = f"Completed Requirement: {requirement[:120]}"
+        content_str = self._serialize_content(summary, {
+            "requirement": requirement,
+            "intent": intent,
+            "acceptance_criteria": acceptance,
+            "task_id": task_id,
+            "tags": ["requirement", intent]
+        })
+
+        async with AsyncSessionLocal() as session:
+            mem = AgentMemory(
+                project_id=project_id,
+                memory_type="requirement",
+                content=content_str,
+                created_at=datetime.now(timezone.utc)
+            )
+            session.add(mem)
+            await session.commit()
+            await session.refresh(mem)
+
+        await self.prune_old_memories(project_id, keep_last_n=100, memory_type="requirement")
+        return mem
+
+    async def get_relevant_memories(
+        self,
+        project_id: str,
+        query: str,
+        limit: int = 5
+    ) -> List[AgentMemory]:
+        """
+        Scores memories by keyword match against query and recency.
+        Returns top relevant AgentMemory records.
+        """
+        async with AsyncSessionLocal() as session:
+            stmt = (
+                select(AgentMemory)
+                .where(AgentMemory.project_id == project_id)
+                .order_by(AgentMemory.created_at.desc())
+            )
+            res = await session.execute(stmt)
+            all_memories = list(res.scalars().all())
+
+        if not all_memories:
+            return []
+
+        query_keywords = self._extract_keywords(query)
+        if not query_keywords:
+            return all_memories[:limit]
+
+        scored: List[Tuple[float, AgentMemory]] = []
+        for mem in all_memories:
+            parsed = self.parse_memory(mem)
+            content_text = (
+                f"{parsed.get('summary', '')} "
+                f"{' '.join(parsed.get('tags', []))} "
+                f"{json.dumps(parsed.get('details', {}))}"
+            ).lower()
+
+            mem_keywords = self._extract_keywords(content_text)
+            overlap = query_keywords.intersection(mem_keywords)
+            score = float(len(overlap) * 10)
+
+            # Bonus for tag match
+            tags_lower = [t.lower() for t in parsed.get("tags", [])]
+            for kw in query_keywords:
+                if kw in tags_lower:
+                    score += 5.0
+                if kw in (mem.memory_type or "").lower():
+                    score += 3.0
+
+            # Direct substring matches in summary
+            summary_lower = parsed.get("summary", "").lower()
+            for kw in query_keywords:
+                if kw in summary_lower:
+                    score += 2.0
+
+            scored.append((score, mem))
+
+        # Sort descending by score; if scores tied, newer memories take precedence
+        scored.sort(key=lambda item: item[0], reverse=True)
+
+        # Filter memories that have at least some relevance, or fallback to top recents
+        relevant = [m for s, m in scored if s > 0]
+        if not relevant:
+            return all_memories[:limit]
+
+        return relevant[:limit]
+
+    async def get_architecture_summary(self, project_id: str) -> str:
+        """
+        Combines: knowledge graph base summary + architecture decisions + important bug fixes.
+        Returns a comprehensive project context string for priming new agent tasks.
+        """
+        async with AsyncSessionLocal() as session:
+            # 1. Base architecture summary
+            stmt_arch = (
+                select(AgentMemory)
+                .where(AgentMemory.project_id == project_id)
+                .where(AgentMemory.memory_type == "architecture")
+                .order_by(AgentMemory.created_at.desc())
+                .limit(1)
+            )
+            res_arch = await session.execute(stmt_arch)
+            arch_mem = res_arch.scalars().first()
+
+            # 2. Decisions
+            stmt_dec = (
+                select(AgentMemory)
+                .where(AgentMemory.project_id == project_id)
+                .where(AgentMemory.memory_type == "decision")
+                .order_by(AgentMemory.created_at.desc())
+                .limit(5)
+            )
+            res_dec = await session.execute(stmt_dec)
+            decisions = list(res_dec.scalars().all())
+
+            # 3. Bug fixes
+            stmt_bugs = (
+                select(AgentMemory)
+                .where(AgentMemory.project_id == project_id)
+                .where(AgentMemory.memory_type == "bug")
+                .order_by(AgentMemory.created_at.desc())
+                .limit(5)
+            )
+            res_bugs = await session.execute(stmt_bugs)
+            bug_fixes = list(res_bugs.scalars().all())
+
+        sections: List[str] = []
+
+        # System Architecture
+        if arch_mem and arch_mem.content:
+            parsed_arch = self.parse_memory(arch_mem)
+            sections.append(f"### Codebase Architecture:\n{parsed_arch.get('summary', '')}")
+        else:
+            sections.append("### Codebase Architecture:\nStandard modular full-stack application structure.")
+
+        # Key Architecture Decisions
+        if decisions:
+            dec_lines = []
+            for d in decisions:
+                p = self.parse_memory(d)
+                dec_lines.append(f"- {p.get('summary')}")
+            sections.append("### Architectural Decisions & Standards:\n" + "\n".join(dec_lines))
+
+        # Important Resolved Bugs & Pitfalls
+        if bug_fixes:
+            bug_lines = []
+            for b in bug_fixes:
+                p = self.parse_memory(b)
+                bug_lines.append(f"- {p.get('summary')}")
+            sections.append("### Previously Resolved Issues & Pitfalls to Avoid:\n" + "\n".join(bug_lines))
+
+        return "\n\n".join(sections)
+
+    async def prune_old_memories(
+        self,
+        project_id: str,
+        keep_last_n: int = 100,
+        memory_type: Optional[str] = None
+    ):
+        """Keeps only the most recent N memories per type per project."""
+        types_to_check = [memory_type] if memory_type else ["architecture", "decision", "bug", "requirement"]
+
+        async with AsyncSessionLocal() as session:
+            for m_type in types_to_check:
+                # Find all IDs ordered by date desc
+                stmt = (
+                    select(AgentMemory.id)
+                    .where(AgentMemory.project_id == project_id)
+                    .where(AgentMemory.memory_type == m_type)
+                    .order_by(AgentMemory.created_at.desc())
+                )
+                res = await session.execute(stmt)
+                all_ids = [row[0] for row in res.fetchall()]
+
+                if len(all_ids) > keep_last_n:
+                    ids_to_delete = all_ids[keep_last_n:]
+                    del_stmt = delete(AgentMemory).where(AgentMemory.id.in_(ids_to_delete))
+                    await session.execute(del_stmt)
+
+            await session.commit()
+
+    async def get_all_memories_grouped(self, project_id: str) -> Dict[str, List[Dict[str, Any]]]:
+        """Returns all memories for a project grouped by type with formatted metadata."""
+        async with AsyncSessionLocal() as session:
+            stmt = (
+                select(AgentMemory)
+                .where(AgentMemory.project_id == project_id)
+                .order_by(AgentMemory.created_at.desc())
+            )
+            res = await session.execute(stmt)
+            memories = list(res.scalars().all())
+
+        grouped: Dict[str, List[Dict[str, Any]]] = {
+            "architecture": [],
+            "decision": [],
+            "bug": [],
+            "requirement": []
+        }
+
+        for m in memories:
+            m_type = m.memory_type or "architecture"
+            if m_type not in grouped:
+                grouped[m_type] = []
+            grouped[m_type].append(self.parse_memory(m))
+
+        return grouped
+
+    async def delete_memory(self, memory_id: str, project_id: Optional[str] = None) -> bool:
+        """Deletes a specific memory entry."""
+        async with AsyncSessionLocal() as session:
+            stmt = delete(AgentMemory).where(AgentMemory.id == memory_id)
+            if project_id:
+                stmt = stmt.where(AgentMemory.project_id == project_id)
+            await session.execute(stmt)
+            await session.commit()
+            return True
+
+
+project_memory = ProjectMemory()
+

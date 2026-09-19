@@ -1,12 +1,14 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useUIStore } from '../../stores/uiStore';
 import { AutonomyLevel } from '../../types';
 import { AuditLogTable } from './AuditLogTable';
+import { SecurityPanel } from './SecurityPanel';
 import { Badge } from '../common/Badge';
 import {
   ShieldCheck,
+  ShieldAlert,
   Lock,
   CheckSquare,
   Square,
@@ -20,6 +22,7 @@ export const SecurityView: React.FC = () => {
   const { settings, togglePermission, setAutonomyLevel } = useSettingsStore();
   const { projectPath } = useProjectStore();
   const { addToast } = useUIStore();
+  const [activeTab, setActiveTab] = useState<'scanner' | 'autonomy'>('scanner');
 
   const autonomyLevels: { level: AutonomyLevel; title: string; desc: string }[] = [
     {
@@ -40,28 +43,67 @@ export const SecurityView: React.FC = () => {
   ];
 
   return (
-    <div className="flex-1 h-full overflow-y-auto bg-[#1E1E1E] p-5 space-y-4 select-none font-sans text-xs">
-      {/* Header */}
-      <div className="border-b border-[#2B2B2B] pb-3 flex flex-col md:flex-row md:items-center justify-between gap-3">
-        <div className="flex items-center gap-2.5">
-          <div className="w-6 h-6 rounded-sm bg-[#007ACC] flex items-center justify-center text-[#FFFFFF]">
-            <ShieldCheck size={14} />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-base font-bold text-[#FFFFFF] font-mono">
-                AUTONOMY & SECURITY
-              </h1>
-              <Badge variant="emerald" size="xs">
-                Sandbox Active
-              </Badge>
+    <div className="flex-1 h-full flex flex-col bg-[#1E1E1E] overflow-hidden select-none font-sans text-xs">
+      {/* Header & Tabs */}
+      <div className="border-b border-[#2B2B2B] bg-[#181818] px-5 pt-3 pb-0 shrink-0">
+        <div className="flex items-center justify-between pb-2">
+          <div className="flex items-center gap-2.5">
+            <div className="w-6 h-6 rounded-sm bg-[#007ACC] flex items-center justify-center text-[#FFFFFF]">
+              <ShieldCheck size={14} />
             </div>
-            <p className="text-xs text-[#858585] mt-0.5">
-              Granular permission boundaries and sandbox path containment.
-            </p>
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="text-base font-bold text-[#FFFFFF] font-mono">
+                  SECURITY & AUTONOMY
+                </h1>
+                <Badge variant="emerald" size="xs">
+                  Sandbox Active
+                </Badge>
+              </div>
+              <p className="text-xs text-[#858585] mt-0.5">
+                Vulnerability detection, secret scanning, and granular execution sandboxing.
+              </p>
+            </div>
           </div>
         </div>
+
+        {/* Tab Controls */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setActiveTab('scanner')}
+            className={clsx(
+              'flex items-center gap-2 px-3 py-2 text-xs font-mono font-medium border-b-2 transition-colors',
+              activeTab === 'scanner'
+                ? 'border-[#007ACC] text-[#FFFFFF] font-bold bg-[#252526]/50'
+                : 'border-transparent text-[#858585] hover:text-[#CCCCCC] hover:bg-[#252526]/30'
+            )}
+          >
+            <ShieldAlert size={14} className={activeTab === 'scanner' ? 'text-[#007ACC]' : ''} />
+            <span>Vulnerability & Secret Scanner</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('autonomy')}
+            className={clsx(
+              'flex items-center gap-2 px-3 py-2 text-xs font-mono font-medium border-b-2 transition-colors',
+              activeTab === 'autonomy'
+                ? 'border-[#007ACC] text-[#FFFFFF] font-bold bg-[#252526]/50'
+                : 'border-transparent text-[#858585] hover:text-[#CCCCCC] hover:bg-[#252526]/30'
+            )}
+          >
+            <Lock size={14} className={activeTab === 'autonomy' ? 'text-[#007ACC]' : ''} />
+            <span>Autonomy & Permissions Sandbox</span>
+          </button>
+        </div>
       </div>
+
+      {/* Tab Content */}
+      {activeTab === 'scanner' ? (
+        <div className="flex-1 overflow-hidden flex flex-col">
+          <SecurityPanel />
+        </div>
+      ) : (
+        <div className="flex-1 overflow-y-auto p-5 space-y-4">
 
       {/* Autonomy Level Selector */}
       <div className="p-3.5 rounded-sm bg-[#181818] border border-[#2B2B2B] space-y-3">
@@ -206,5 +248,8 @@ export const SecurityView: React.FC = () => {
       {/* Audit Log Table */}
       <AuditLogTable />
     </div>
+      )}
+    </div>
   );
 };
+

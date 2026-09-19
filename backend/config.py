@@ -1,4 +1,5 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field, AliasChoices
 from typing import List
 from pathlib import Path
 
@@ -15,6 +16,24 @@ class Settings(BaseSettings):
         "http://localhost:3000",
         "file://"
     ]
+
+    # GitHub OAuth & integration settings
+    github_client_id: str = Field(
+        default="",
+        validation_alias=AliasChoices("GITHUB_CLIENT_ID", "AUTONOMOUS_IDE_GITHUB_CLIENT_ID")
+    )
+    github_client_secret: str = Field(
+        default="",
+        validation_alias=AliasChoices("GITHUB_CLIENT_SECRET", "AUTONOMOUS_IDE_GITHUB_CLIENT_SECRET")
+    )
+    github_encryption_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("GITHUB_ENCRYPTION_KEY", "AUTONOMOUS_IDE_GITHUB_ENCRYPTION_KEY")
+    )
+    github_redirect_uri: str = Field(
+        default="http://localhost:8000/api/github/auth/callback",
+        validation_alias=AliasChoices("GITHUB_REDIRECT_URI", "AUTONOMOUS_IDE_GITHUB_REDIRECT_URI")
+    )
 
     model_config = SettingsConfigDict(
         env_prefix="AUTONOMOUS_IDE_",

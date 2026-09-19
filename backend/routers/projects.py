@@ -39,10 +39,11 @@ from backend.schemas import (
 )
 from backend.services.project_scanner import ProjectScanner, EXTENSION_MAP
 from backend.services.ast_analyzer import ast_analyzer
-from backend.services.knowledge_graph import knowledge_graph
+from backend.services.knowledge_graph import knowledge_graph, project_memory
 from backend.services.impact_analyzer import impact_analyzer
 from backend.services.permission_service import permission_service
 from backend.services.git_service import git_service
+from backend.services.security_scanner import security_scanner, SecretScanResult, DependencyScanResult
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
@@ -910,5 +911,262 @@ async def get_project_evaluation_report(
         media_type="text/markdown",
         headers={"Content-Disposition": f"attachment; filename=evaluation_report_{project_id}.md"}
     )
+
+
+class CreateMemoryRequest(BaseModel):
+    type: str  # architecture, decision, bug, requirement
+    content: str
+    tags: List[str] = []
+    task_id: Optional[str] = None
+
+
+@router.get("/{project_id}/memory")
+async def get_project_memories(
+    project_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """Returns all memories for the project grouped by type."""
+    p_stmt = select(Project).where(Project.id == project_id)
+    p_res = await db.execute(p_stmt)
+    if not p_res.scalars().first():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Project not found with id: {project_id}"
+        )
+    return await project_memory.get_all_memories_grouped(project_id)
+
+
+@router.post("/{project_id}/memory")
+async def create_project_memory(
+    project_id: str,
+    req: CreateMemoryRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """Manually add a memory (e.g. architecture decision, custom note, bug, requirement)."""
+    p_stmt = select(Project).where(Project.id == project_id)
+    p_res = await db.execute(p_stmt)
+    if not p_res.scalars().first():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Project not found with id: {project_id}"
+        )
+
+    mem_type = req.type.lower()
+    if mem_type == "decision":
+        mem = await project_memory.store_architecture_decision(
+            project_id=project_id,
+            decision=req.content,
+            context="",
+            task_id=req.task_id or ""
+        )
+    elif mem_type == "bug":
+        mem = await project_memory.store_bug_fix(
+            project_id=project_id,
+            bug=req.content,
+            fix="",
+            affected_files=[],
+            task_id=req.task_id or ""
+        )
+    elif mem_type == "requirement":
+        mem = await project_memory.store_requirement(
+            project_id=project_id,
+            requirement=req.content,
+            spec=None,
+            task_id=req.task_id or ""
+        )
+    else:
+        content_str = project_memory._serialize_content(
+            summary=req.content,
+            tags=req.tags or [mem_type],
+            task_id=req.task_id,
+            details={}
+        )
+        async with AsyncSessionLocal() as session:
+            mem = AgentMemory(
+                project_id=project_id,
+                memory_type=mem_type,
+                content=content_str,
+                created_at=datetime.now(timezone.utc)
+            )
+            session.add(mem)
+            await session.commit()
+            await session.refresh(mem)
+
+    return project_memory.parse_memory(mem)
+
+
+@router.delete("/{project_id}/memory/{memory_id}")
+async def delete_project_memory(
+    project_id: str,
+    memory_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """Deletes a memory item for a project."""
+    p_stmt = select(Project).where(Project.id == project_id)
+    p_res = await db.execute(p_stmt)
+    if not p_res.scalars().first():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Project not found with id: {project_id}"
+        )
+
+    deleted = await project_memory.delete_memory(memory_id, project_id=project_id)
+    return {"success": deleted, "deleted_id": memory_id}
+
+
+@router.get("/{project_id}/memory/relevant")
+async def get_relevant_project_memories(
+    project_id: str,
+    q: str = Query(..., description="Query prompt to match against memories"),
+    limit: int = Query(5, description="Maximum number of memories to return"),
+    db: AsyncSession = Depends(get_db)
+):
+    """Returns top-N relevant memories for a prompt query."""
+    p_stmt = select(Project).where(Project.id == project_id)
+    p_res = await db.execute(p_stmt)
+    if not p_res.scalars().first():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Project not found with id: {project_id}"
+        )
+
+    memories = await project_memory.get_relevant_memories(project_id=project_id, query=q, limit=limit)
+    return [project_memory.parse_memory(m) for m in memories]
+
+
+class ModelConfigRequest(BaseModel):
+    planning_model: Optional[str] = "llama3.1:8b"
+    coding_model: Optional[str] = "codellama:13b"
+    diagnosis_model: Optional[str] = "llama3.1:8b"
+    summarization_model: Optional[str] = "llama3.1:8b"
+    ollama_base_url: Optional[str] = "http://localhost:11434"
+    temperature: Optional[float] = 0.2
+    max_tokens: Optional[int] = 2000
+
+
+@router.get("/{project_id}/model-config", response_model=ModelConfigRequest)
+async def get_project_model_config(
+    project_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """Returns the model configuration for the project."""
+    stmt = select(Project).where(Project.id == project_id)
+    res = await db.execute(stmt)
+    project = res.scalars().first()
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Project not found with id: {project_id}"
+        )
+
+    if project.config_json:
+        try:
+            cfg_dict = json.loads(project.config_json)
+            if "model_config" in cfg_dict and isinstance(cfg_dict["model_config"], dict):
+                return ModelConfigRequest.model_validate(cfg_dict["model_config"])
+        except Exception:
+            pass
+
+    return ModelConfigRequest()
+
+
+@router.put("/{project_id}/model-config", response_model=ModelConfigRequest)
+async def update_project_model_config(
+    project_id: str,
+    config: ModelConfigRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """Updates the model configuration for the project."""
+    stmt = select(Project).where(Project.id == project_id)
+    res = await db.execute(stmt)
+    project = res.scalars().first()
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Project not found with id: {project_id}"
+        )
+
+    cfg_dict = {}
+    if project.config_json:
+        try:
+            cfg_dict = json.loads(project.config_json)
+        except Exception:
+            cfg_dict = {}
+
+    cfg_dict["model_config"] = config.model_dump(mode="json")
+    project.config_json = json.dumps(cfg_dict)
+    await db.commit()
+    await db.refresh(project)
+
+    return config
+
+
+class SecurityReportResponse(BaseModel):
+    secrets: SecretScanResult
+    dependencies: DependencyScanResult
+
+
+@router.get("/{project_id}/security/secrets", response_model=SecretScanResult)
+async def scan_project_secrets(
+    project_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """Scans all project source files for unredacted secrets and API keys."""
+    stmt = select(Project).where(Project.id == project_id)
+    res = await db.execute(stmt)
+    project = res.scalars().first()
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Project not found with id: {project_id}"
+        )
+
+    return await asyncio.to_thread(security_scanner.scan_for_secrets, project.path)
+
+
+@router.get("/{project_id}/security/dependencies", response_model=DependencyScanResult)
+async def scan_project_dependencies(
+    project_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """Scans project dependencies for known vulnerabilities via package manifests."""
+    stmt = select(Project).where(Project.id == project_id)
+    res = await db.execute(stmt)
+    project = res.scalars().first()
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Project not found with id: {project_id}"
+        )
+
+    return await security_scanner.scan_dependencies(project.path)
+
+
+@router.post("/{project_id}/security/scan", response_model=SecurityReportResponse)
+async def run_full_security_scan(
+    project_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """Runs concurrent secret and dependency scans for the project."""
+    stmt = select(Project).where(Project.id == project_id)
+    res = await db.execute(stmt)
+    project = res.scalars().first()
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Project not found with id: {project_id}"
+        )
+
+    secrets_task = asyncio.to_thread(security_scanner.scan_for_secrets, project.path)
+    deps_task = security_scanner.scan_dependencies(project.path)
+
+    secrets_res, deps_res = await asyncio.gather(secrets_task, deps_task)
+    return SecurityReportResponse(
+        secrets=secrets_res,
+        dependencies=deps_res
+    )
+
+
+
 
 

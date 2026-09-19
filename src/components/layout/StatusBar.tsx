@@ -4,6 +4,8 @@ import { useTestStore } from '../../stores/testStore';
 import { useAgentStore } from '../../stores/agentStore';
 import { useTerminalStore } from '../../stores/terminalStore';
 import { useUIStore } from '../../stores/uiStore';
+import { CIStatus } from '../GitHub';
+import { ModelStatus } from '../StatusBar';
 import {
   GitBranch,
   Check,
@@ -34,6 +36,8 @@ export const StatusBar: React.FC = () => {
           <GitBranch size={12} />
           <span className="font-mono">{currentBranch}*</span>
         </button>
+
+        <CIStatus compact={true} />
 
         <button
           onClick={() => setActiveView('git')}
@@ -88,6 +92,8 @@ export const StatusBar: React.FC = () => {
           <Terminal size={11} />
           <span>Terminal</span>
         </button>
+
+        <ModelStatus />
 
         <button
           onClick={() => setActiveView('agent')}

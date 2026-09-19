@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Sparkles,
   CheckCircle2,
@@ -14,12 +14,22 @@ import {
   HelpCircle,
   Clock,
   Loader2,
-  Check
+  Check,
+  Brain,
+  ChevronDown,
+  ChevronRight,
+  Lightbulb,
+  Bug,
+  Layers,
+  ListTodo
 } from 'lucide-react';
 import { usePromptStore } from '../../store/promptStore';
-import { ImplementationStep } from '../../types/api';
+import { useProjectStore } from '../../store/projectStore';
+import { ImplementationStep, ProjectMemoryItem } from '../../types/api';
+import { getRelevantMemories } from '../../lib/api';
 
 export const CompilerPanel: React.FC = () => {
+  const { projectId } = useProjectStore();
   const {
     compiledSpec,
     compilerSteps,
@@ -33,6 +43,34 @@ export const CompilerPanel: React.FC = () => {
   } = usePromptStore();
 
   const [checkedCriteria, setCheckedCriteria] = useState<Record<number, boolean>>({});
+  const [relevantMemories, setRelevantMemories] = useState<ProjectMemoryItem[]>([]);
+  const [isMemoryExpanded, setIsMemoryExpanded] = useState<boolean>(true);
+  const [selectedMemory, setSelectedMemory] = useState<ProjectMemoryItem | null>(null);
+
+  useEffect(() => {
+    if (!projectId) return;
+    const query = compiledSpec?.intent || '';
+    if (!query) {
+      setRelevantMemories([]);
+      return;
+    }
+    let active = true;
+    getRelevantMemories(projectId, query, 5)
+      .then((mems) => {
+        if (active) {
+          setRelevantMemories(mems);
+          if (mems.length > 0) {
+            setSelectedMemory((prev) => prev || mems[0]);
+          }
+        }
+      })
+      .catch((err) => {
+        console.warn('Failed to fetch relevant memories for prompt', err);
+      });
+    return () => {
+      active = false;
+    };
+  }, [projectId, compiledSpec?.intent]);
 
   const toggleCriterion = (idx: number) => {
     setCheckedCriteria((prev) => ({
@@ -268,6 +306,102 @@ export const CompilerPanel: React.FC = () => {
               </span>
             </div>
           </div>
+
+          {/* Memory Context Section (Cross-Session Knowledge) */}
+          {relevantMemories.length > 0 && (
+            <div className="p-3.5 bg-[#202020] border border-purple-900/50 rounded-md space-y-3">
+              <div
+                onClick={() => setIsMemoryExpanded(!isMemoryExpanded)}
+                className="flex items-center justify-between cursor-pointer select-none"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-sm">📚</span>
+                  <span className="text-[11px] font-mono uppercase tracking-wider text-purple-300 font-semibold flex items-center gap-1.5">
+                    <Brain size={13} className="text-purple-400" />
+                    {relevantMemories.length} relevant {relevantMemories.length === 1 ? 'memory' : 'memories'} found
+                  </span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-950 text-purple-300 border border-purple-800/60 font-mono">
+                    Injected into Planning Prompt
+                  </span>
+                </div>
+                <div className="flex items-center gap-1 text-zinc-400 text-xs">
+                  <span>{isMemoryExpanded ? 'Collapse' : 'Expand'}</span>
+                  {isMemoryExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                </div>
+              </div>
+
+              {isMemoryExpanded && (
+                <div className="space-y-3 pt-1">
+                  {/* Memory Chips */}
+                  <div className="flex flex-wrap gap-2">
+                    {relevantMemories.map((mem) => {
+                      const isSelected = selectedMemory?.id === mem.id;
+                      return (
+                        <button
+                          key={mem.id}
+                          type="button"
+                          onClick={() => setSelectedMemory(isSelected ? null : mem)}
+                          className={`px-2.5 py-1.5 rounded text-left border text-xs flex items-center gap-2 transition-all ${
+                            isSelected
+                              ? 'bg-purple-950/70 border-purple-500/80 text-purple-200 shadow-sm ring-1 ring-purple-500/50'
+                              : 'bg-[#181818] border-[#2E2E2E] text-zinc-300 hover:border-zinc-600 hover:bg-zinc-800/60'
+                          }`}
+                        >
+                          {mem.memory_type === 'decision' ? (
+                            <Lightbulb size={12} className="text-emerald-400 shrink-0" />
+                          ) : mem.memory_type === 'bug' ? (
+                            <Bug size={12} className="text-rose-400 shrink-0" />
+                          ) : mem.memory_type === 'requirement' ? (
+                            <ListTodo size={12} className="text-purple-400 shrink-0" />
+                          ) : (
+                            <Layers size={12} className="text-sky-400 shrink-0" />
+                          )}
+                          <span className="font-mono text-[10px] uppercase text-zinc-400">
+                            {mem.memory_type}
+                          </span>
+                          <span className="truncate max-w-[240px] text-xs font-medium">
+                            {mem.summary}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Selected Memory Influence Detail */}
+                  {selectedMemory && (
+                    <div className="p-3 bg-[#161616] border border-purple-900/40 rounded text-xs space-y-2">
+                      <div className="flex items-center justify-between text-[11px] text-purple-300 font-mono">
+                        <span className="flex items-center gap-1.5 font-semibold">
+                          <Sparkles size={12} className="text-purple-400" />
+                          How this influenced the plan:
+                        </span>
+                        <span className="text-zinc-500 text-[10px]">
+                          Memory ID: {selectedMemory.id.slice(0, 8)}
+                        </span>
+                      </div>
+
+                      <p className="text-zinc-200 text-xs leading-relaxed">
+                        {selectedMemory.memory_type === 'decision'
+                          ? `The AI agent adhered to this architectural choice ("${selectedMemory.summary}") and aligned module structures and libraries accordingly.`
+                          : selectedMemory.memory_type === 'bug'
+                          ? `The agent took into account previous bug fixes ("${selectedMemory.summary}") to avoid regression and error loops.`
+                          : selectedMemory.memory_type === 'requirement'
+                          ? `The agent reused established specifications ("${selectedMemory.summary}") to ensure compatibility.`
+                          : `The agent factored in codebase architectural rules ("${selectedMemory.summary}").`}
+                      </p>
+
+                      {selectedMemory.details && (selectedMemory.details.context || selectedMemory.details.fix) && (
+                        <div className="pt-1.5 border-t border-zinc-800/80 text-[11px] text-zinc-400">
+                          <span className="font-semibold text-zinc-300">Context / Fix: </span>
+                          <span>{selectedMemory.details.context || selectedMemory.details.fix}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Middle Section: b) REQUIREMENTS & c) AMBIGUITIES */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

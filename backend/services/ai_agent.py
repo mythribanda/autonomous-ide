@@ -34,6 +34,8 @@ from backend.schemas import (
 from backend.services.agent_tools import execute_tool
 
 from backend.services.verification import VerificationService
+from backend.services.knowledge_graph import project_memory
+from backend.services.model_provider import model_router
 
 logger = logging.getLogger(__name__)
 
@@ -114,14 +116,29 @@ class AutonomousAgent:
         steps: List[AgentStep] = []
         raw_steps = state.compiled_spec.implementation_steps
 
+        # Retrieve relevant past memories for this project & requirement
+        mem_context_str = ""
+        try:
+            intent_q = state.compiled_spec.intent or "task"
+            rel_mems = await project_memory.get_relevant_memories(state.project_id, intent_q, limit=4)
+            if rel_mems:
+                mem_lines = []
+                for m in rel_mems:
+                    parsed = project_memory.parse_memory(m)
+                    mem_lines.append(f"- [{parsed['memory_type'].upper()}] {parsed['summary']}")
+                mem_context_str = "\n\nRelevant past project memories and decisions to respect:\n" + "\n".join(mem_lines)
+        except Exception as ex:
+            logger.warning(f"Could not retrieve project memories: {ex}")
+
         # Attempt Ollama conversion
         try:
             system_prompt = "You are an AI agent. Convert implementation steps into exact tool calls. Return ONLY valid JSON."
             steps_payload = [s.model_dump() for s in raw_steps]
             user_prompt = (
                 f"Convert these implementation steps into concrete agent tool calls:\n"
-                f"{json.dumps(steps_payload, indent=2)}\n\n"
+                f"{json.dumps(steps_payload, indent=2)}{mem_context_str}\n\n"
                 f"Available tools:\n"
+                f"- read_file(path: str)\n"
                 f"- read_file(path: str)\n"
                 f"- write_file(path: str, content: str)\n"
                 f"- create_file(path: str, content: str)\n"
@@ -146,19 +163,27 @@ class AutonomousAgent:
                 f"}}"
             )
 
-            resp = await asyncio.wait_for(
-                self.client.chat(
-                    model=model_name,
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt}
-                    ],
-                    options={"temperature": 0.1}
-                ),
-                timeout=25.0
+            # Retrieve project model config if configured
+            model_cfg = None
+            if state.project_id:
+                try:
+                    async with AsyncSessionLocal() as session:
+                        p_res = await session.execute(select(Project).where(Project.id == state.project_id))
+                        proj = p_res.scalars().first()
+                        if proj and proj.config_json:
+                            model_cfg = json.loads(proj.config_json).get("model_config")
+                except Exception:
+                    pass
+
+            resp = await model_router.complete(
+                role="planning",
+                system=system_prompt,
+                user=user_prompt,
+                temperature=0.1,
+                project_config=model_cfg
             )
 
-            parsed = self._clean_and_parse_json(resp.message.content)
+            parsed = self._clean_and_parse_json(resp.content)
             for raw_s in parsed.get("steps", []):
                 steps.append(AgentStep(
                     step_id=raw_s.get("step_id", f"step_{len(steps) + 1}"),
@@ -376,18 +401,14 @@ class AutonomousAgent:
                         f"}}"
                     )
 
-                    diag_resp = await asyncio.wait_for(
-                        self.client.chat(
-                            model=model_name,
-                            messages=[
-                                {"role": "system", "content": diag_system},
-                                {"role": "user", "content": diag_user}
-                            ],
-                            options={"temperature": 0.1}
-                        ),
-                        timeout=20.0
+                    diag_resp = await model_router.complete(
+                        role="diagnosis",
+                        system=diag_system,
+                        user=diag_user,
+                        temperature=0.1,
+                        project_config=model_cfg
                     )
-                    parsed_diag = self._clean_and_parse_json(diag_resp.message.content)
+                    parsed_diag = self._clean_and_parse_json(diag_resp.content)
                     diagnosis = parsed_diag.get("diagnosis", diagnosis)
                     repair_action = parsed_diag.get("repair_action", repair_action)
                     repair_tool = parsed_diag.get("repair_tool")
@@ -428,6 +449,20 @@ class AutonomousAgent:
                         "attempt_number": state.error_count,
                         "step_id": step.step_id
                     })
+
+                    # Automatically record bug and fix in project memory
+                    try:
+                        affected = [step.tool_args.get("path")] if isinstance(step.tool_args, dict) and step.tool_args.get("path") else []
+                        await project_memory.store_bug_fix(
+                            project_id=state.project_id,
+                            bug=diagnosis,
+                            fix=repair_action,
+                            affected_files=affected,
+                            task_id=state.task_id
+                        )
+                    except Exception as ex_bf:
+                        logger.warning(f"Could not store bug fix memory: {ex_bf}")
+
                     state.status = AgentStatus.EXECUTING
                     break
                 else:
@@ -485,15 +520,18 @@ class AutonomousAgent:
                 workspace_path=workspace_path,
                 permissions=perms
             )
-            commit_hash = ""
             if chk_result.success and isinstance(chk_result.output, dict):
                 commit_hash = chk_result.output.get("commit_hash", "")
-
-            await event_emitter("git_commit", f"Git checkpoint created: {commit_hash[:7]}", {
-                "type": "git_commit",
-                "commit_hash": commit_hash,
-                "message": checkpoint_msg
-            })
+                await event_emitter("git_commit", f"Git checkpoint created: {commit_hash[:7]}", {
+                    "type": "git_commit",
+                    "commit_hash": commit_hash,
+                    "message": checkpoint_msg
+                })
+            else:
+                await event_emitter("checkpoint_blocked", f"Git checkpoint blocked: {chk_result.error}", {
+                    "type": "checkpoint_blocked",
+                    "error": chk_result.error
+                })
 
         state.status = AgentStatus.COMPLETED if verification_report.passed else AgentStatus.FAILED
         execution_time = time.time() - start_time
@@ -814,6 +852,30 @@ class AIAgentManager:
                     "recovery_attempts": result.recovery_attempts,
                     "human_interventions": result.human_interventions
                 })
+
+                # Persist completed requirement and architecture decisions to Project Memory
+                if result.success:
+                    try:
+                        proj_id = task_record.project_id if task_record else "default"
+                        req_text = task_record.requirement if task_record else (spec.intent or "task")
+                        await project_memory.store_requirement(
+                            project_id=proj_id,
+                            requirement=req_text,
+                            spec=spec,
+                            task_id=task_id
+                        )
+
+                        notes = spec.technical_architecture.architecture_notes if spec and spec.technical_architecture else []
+                        for note in notes:
+                            if any(k in note.lower() for k in ["choose", "chose", "use", "using", "decision", "pattern", "standard", "prefer"]):
+                                await project_memory.store_architecture_decision(
+                                    project_id=proj_id,
+                                    decision=note,
+                                    context=f"Recorded from task {task_id[:8]}",
+                                    task_id=task_id
+                                )
+                    except Exception as ex_mem:
+                        logger.warning(f"Could not persist completion memory: {ex_mem}")
 
                 await self.broadcast_event(
                     task_id,

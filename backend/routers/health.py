@@ -31,3 +31,23 @@ async def ollama_health_check():
             models=[],
             error=f"Could not connect to Ollama at {settings.ollama_url}: {str(e)}"
         )
+
+
+@router.get("/health/model-latency")
+async def get_model_latency():
+    """Returns rolling latency statistics across model invocations (last 100 calls)."""
+    from backend.services.model_provider import model_router
+    return model_router.get_latency_stats()
+
+
+@router.get("/health/model-health")
+async def get_model_health():
+    """Checks the health and responsiveness of the configured model providers."""
+    from backend.services.model_provider import model_router
+    health_result = await model_router.health()
+    stats = model_router.get_latency_stats()
+    return {
+        "health": health_result.model_dump(),
+        "stats": stats
+    }
+

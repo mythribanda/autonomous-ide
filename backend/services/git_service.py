@@ -15,6 +15,7 @@ from backend.schemas import (
 from backend.database import AsyncSessionLocal
 from backend.models.git import GitCheckpoint
 from sqlalchemy import select
+from backend.services.security_scanner import security_scanner, SecurityException
 
 CHECKPOINT_PREFIX = "CHECKPOINT: "
 AUTONOMOUS_SUFFIX = " [autonomous-ide]"
@@ -167,6 +168,26 @@ class GitService:
             except Exception:
                 cur_branch = "main"
             return current_hash, 0, True, cur_branch
+
+        # Pre-commit Security Scan: verify no unredacted secrets are staged
+        staged_files_list: List[str] = []
+        for line in porcelain.splitlines():
+            if line and len(line) >= 4 and line[0] in ("M", "A", "D", "R", "C"):
+                raw_path = line[3:].strip()
+                if " -> " in raw_path:
+                    raw_path = raw_path.split(" -> ")[1].strip()
+                staged_files_list.append(raw_path)
+
+        if staged_files_list:
+            pre_commit = security_scanner.scan_before_commit(repo_path, staged_files_list)
+            if pre_commit.blocked:
+                try:
+                    repo.git.reset()
+                except Exception:
+                    pass
+                raise SecurityException(
+                    f"Commit blocked: secrets detected in staged files: {'; '.join(pre_commit.reasons)}"
+                )
 
         # 3. repo.index.commit(f"CHECKPOINT: {message} [autonomous-ide]")
         full_msg = f"{CHECKPOINT_PREFIX}{message}{AUTONOMOUS_SUFFIX}"

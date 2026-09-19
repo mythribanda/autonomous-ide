@@ -6,6 +6,7 @@ from backend.routers.terminal import router as terminal_router
 from backend.routers.git_router import router as git_router
 from backend.routers.health import router as health_router
 from backend.routers.prompt import router as prompt_router
+from backend.routers.github import router as github_router
 
 __all__ = [
     "projects_router",
@@ -16,4 +17,6 @@ __all__ = [
     "git_router",
     "health_router",
     "prompt_router",
+    "github_router",
 ]
+

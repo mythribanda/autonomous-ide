@@ -18,9 +18,11 @@ from backend.routers import (
     terminal_router,
     git_router,
     health_router,
-    prompt_router
+    prompt_router,
+    github_router
 )
 from backend.routers.terminal import handle_terminal_ws
+from backend.routers.github import handle_clone_ws
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -97,6 +99,7 @@ app.include_router(terminal_router, prefix="/api")
 app.include_router(git_router, prefix="/api")
 app.include_router(health_router, prefix="/api")
 app.include_router(prompt_router, prefix="/api")
+app.include_router(github_router, prefix="/api")
 
 # WebSocket endpoint streaming agent events to frontend per task
 @app.websocket("/ws/agent/{task_id}")
@@ -137,3 +140,9 @@ async def websocket_global_endpoint(websocket: WebSocket):
 @app.websocket("/ws/terminal/{project_id}")
 async def websocket_terminal_endpoint(websocket: WebSocket, project_id: str):
     await handle_terminal_ws(websocket, project_id)
+
+
+# GitHub Clone progress streaming WebSocket endpoint
+@app.websocket("/ws/github/clone/{session_id}")
+async def websocket_github_clone_endpoint(websocket: WebSocket, session_id: str):
+    await handle_clone_ws(websocket, session_id)

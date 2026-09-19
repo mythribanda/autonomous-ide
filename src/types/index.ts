@@ -220,7 +220,9 @@ export type ActivityView =
   | 'verification'
   | 'recovery'
   | 'git'
+  | 'github'
   | 'terminal'
   | 'security'
   | 'evaluation'
+  | 'memory'
   | 'settings';

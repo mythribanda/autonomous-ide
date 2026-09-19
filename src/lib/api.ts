@@ -40,7 +40,27 @@ import {
   PermissionCheckRequest,
   FileDiffDetailResponse,
   ProjectDashboardStats,
-  EvaluationMetrics
+  EvaluationMetrics,
+  GitHubAuthStartResponse,
+  GitHubStatusResponse,
+  GitHubRepo,
+  GitHubCloneRequest,
+  GitHubCloneResult,
+  GitHubPushResult,
+  GitHubPullResult,
+  GitHubPRRequest,
+  GitHubPRResult,
+  GitHubIssue,
+  GitHubCIStatus,
+  ProjectMemoryItem,
+  GroupedMemoriesResponse,
+  CreateMemoryRequest,
+  ModelConfig,
+  ModelLatencyStats,
+  ModelHealthData,
+  SecretScanResult,
+  DependencyScanResult,
+  SecurityReport
 } from '../types/api';
 import { PromptSpecification } from '../types';
 
@@ -608,3 +628,131 @@ export async function getEvaluationReport(projectId: string): Promise<string> {
   }
   return res.text();
 }
+
+export async function getGitHubAuthStart(): Promise<GitHubAuthStartResponse> {
+  return request<GitHubAuthStartResponse>('/github/auth/start', { method: 'GET' });
+}
+
+export async function getGitHubStatus(): Promise<GitHubStatusResponse> {
+  return request<GitHubStatusResponse>('/github/status', { method: 'GET' });
+}
+
+export async function disconnectGitHub(): Promise<{ connected: boolean; message: string }> {
+  return request<{ connected: boolean; message: string }>('/github/disconnect', { method: 'POST' });
+}
+
+export async function getGitHubRepos(page: number = 1): Promise<GitHubRepo[]> {
+  return request<GitHubRepo[]>(`/github/repos?page=${page}`, { method: 'GET' });
+}
+
+export async function cloneGitHubRepo(data: GitHubCloneRequest): Promise<GitHubCloneResult> {
+  return request<GitHubCloneResult>('/github/clone', {
+    method: 'POST',
+    body: JSON.stringify(data)
+  });
+}
+
+export async function pushGitHubBranch(projectId: string, branch: string): Promise<GitHubPushResult> {
+  return request<GitHubPushResult>(`/github/${encodeURIComponent(projectId)}/push`, {
+    method: 'POST',
+    body: JSON.stringify({ branch })
+  });
+}
+
+export async function pullGitHubRemote(projectId: string): Promise<GitHubPullResult> {
+  return request<GitHubPullResult>(`/github/${encodeURIComponent(projectId)}/pull`, {
+    method: 'POST'
+  });
+}
+
+export async function createGitHubPR(projectId: string, data: GitHubPRRequest): Promise<GitHubPRResult> {
+  return request<GitHubPRResult>(`/github/${encodeURIComponent(projectId)}/pr`, {
+    method: 'POST',
+    body: JSON.stringify(data)
+  });
+}
+
+export async function getGitHubIssues(projectId: string): Promise<GitHubIssue[]> {
+  return request<GitHubIssue[]>(`/github/${encodeURIComponent(projectId)}/issues`, {
+    method: 'GET'
+  });
+}
+
+export async function getGitHubCIStatus(projectId: string, commitSha?: string): Promise<GitHubCIStatus> {
+  const query = commitSha ? `?commit_sha=${encodeURIComponent(commitSha)}` : '';
+  return request<GitHubCIStatus>(`/github/${encodeURIComponent(projectId)}/ci-status${query}`, {
+    method: 'GET'
+  });
+}
+
+export async function getProjectMemories(projectId: string): Promise<GroupedMemoriesResponse> {
+  return request<GroupedMemoriesResponse>(`/projects/${encodeURIComponent(projectId)}/memory`, {
+    method: 'GET'
+  });
+}
+
+export async function createProjectMemory(projectId: string, data: CreateMemoryRequest): Promise<ProjectMemoryItem> {
+  return request<ProjectMemoryItem>(`/projects/${encodeURIComponent(projectId)}/memory`, {
+    method: 'POST',
+    body: JSON.stringify(data)
+  });
+}
+
+export async function deleteProjectMemory(projectId: string, memoryId: string): Promise<{ success: boolean; deleted_id: string }> {
+  return request<{ success: boolean; deleted_id: string }>(`/projects/${encodeURIComponent(projectId)}/memory/${encodeURIComponent(memoryId)}`, {
+    method: 'DELETE'
+  });
+}
+
+export async function getRelevantMemories(projectId: string, query: string, limit: number = 5): Promise<ProjectMemoryItem[]> {
+  const url = `/projects/${encodeURIComponent(projectId)}/memory/relevant?q=${encodeURIComponent(query)}&limit=${limit}`;
+  return request<ProjectMemoryItem[]>(url, {
+    method: 'GET'
+  });
+}
+
+export async function getModelLatency(): Promise<ModelLatencyStats> {
+  return request<ModelLatencyStats>('/health/model-latency', {
+    method: 'GET'
+  });
+}
+
+export async function getModelHealth(): Promise<{ health: ModelHealthData; stats: ModelLatencyStats }> {
+  return request<{ health: ModelHealthData; stats: ModelLatencyStats }>('/health/model-health', {
+    method: 'GET'
+  });
+}
+
+export async function getProjectModelConfig(projectId: string): Promise<ModelConfig> {
+  return request<ModelConfig>(`/projects/${encodeURIComponent(projectId)}/model-config`, {
+    method: 'GET'
+  });
+}
+
+export async function updateProjectModelConfig(projectId: string, config: Partial<ModelConfig>): Promise<ModelConfig> {
+  return request<ModelConfig>(`/projects/${encodeURIComponent(projectId)}/model-config`, {
+    method: 'PUT',
+    body: JSON.stringify(config)
+  });
+}
+
+export async function getSecretScan(projectId: string): Promise<SecretScanResult> {
+  return request<SecretScanResult>(`/projects/${encodeURIComponent(projectId)}/security/secrets`, {
+    method: 'GET'
+  });
+}
+
+export async function getDependencyScan(projectId: string): Promise<DependencyScanResult> {
+  return request<DependencyScanResult>(`/projects/${encodeURIComponent(projectId)}/security/dependencies`, {
+    method: 'GET'
+  });
+}
+
+export async function runSecurityScan(projectId: string): Promise<SecurityReport> {
+  return request<SecurityReport>(`/projects/${encodeURIComponent(projectId)}/security/scan`, {
+    method: 'POST'
+  });
+}
+
+
+

@@ -25,6 +25,8 @@ import { TaskList } from '../Tasks/TaskList';
 import { EmergencyStop } from '../Controls/EmergencyStop';
 import { ProjectDashboard } from '../Dashboard';
 import { EvaluationDashboard } from '../Evaluation';
+import { GitHubPanel } from '../GitHub';
+import { ProjectMemoryPanel } from '../Memory';
 import { useProjectStore } from '../../store/projectStore';
 
 export const AppShell: React.FC = () => {
@@ -56,10 +58,14 @@ export const AppShell: React.FC = () => {
         return <RecoveryTimelineView />;
       case 'git':
         return <GitView />;
+      case 'github':
+        return <GitHubPanel />;
       case 'security':
         return <SecurityView />;
       case 'evaluation':
         return <EvaluationDashboard />;
+      case 'memory':
+        return <ProjectMemoryPanel />;
       case 'explorer':
       default:
         return <EditorArea />;

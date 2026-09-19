@@ -598,3 +598,226 @@ export interface EvaluationMetrics {
   completion_timeline: EvaluationTimelineItem[];
 }
 
+export interface GitHubAuthStartResponse {
+  auth_url: string;
+  state: string;
+}
+
+export interface GitHubStatusResponse {
+  connected: boolean;
+  username?: string | null;
+  avatar_url?: string | null;
+}
+
+export interface GitHubUser {
+  id: number;
+  login: string;
+  name?: string | null;
+  avatar_url?: string | null;
+  html_url?: string | null;
+  email?: string | null;
+  bio?: string | null;
+  public_repos?: number;
+}
+
+export interface GitHubRepo {
+  id: number;
+  name: string;
+  full_name: string;
+  description?: string | null;
+  html_url: string;
+  clone_url: string;
+  default_branch: string;
+  language?: string | null;
+  stars: number;
+  forks: number;
+  private: boolean;
+  updated_at?: string | null;
+  pushed_at?: string | null;
+}
+
+export interface GitHubCloneRequest {
+  clone_url: string;
+  target_path: string;
+  session_id?: string;
+}
+
+export interface GitHubCloneResult {
+  success: boolean;
+  target_path: string;
+  repo_name: string;
+  message: string;
+  error?: string | null;
+}
+
+export interface GitHubPushRequest {
+  branch: string;
+}
+
+export interface GitHubPushResult {
+  success: boolean;
+  branch: string;
+  message: string;
+  commit_hash?: string | null;
+  requires_approval?: boolean;
+  error?: string | null;
+}
+
+export interface GitHubPullResult {
+  success: boolean;
+  message: string;
+  updated_files: string[];
+  error?: string | null;
+}
+
+export interface GitHubPRRequest {
+  title: string;
+  body: string;
+  head: string;
+  base?: string;
+}
+
+export interface GitHubPRResult {
+  success: boolean;
+  pr_number?: number | null;
+  html_url?: string | null;
+  title?: string | null;
+  state?: string | null;
+  message: string;
+  error?: string | null;
+}
+
+export interface GitHubIssue {
+  id: number;
+  number: number;
+  title: string;
+  body?: string | null;
+  state: string;
+  html_url: string;
+  user_login?: string | null;
+  labels: string[];
+  comments_count: number;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface GitHubCIRun {
+  name: string;
+  status?: string;
+  conclusion?: string | null;
+  html_url?: string | null;
+}
+
+export interface GitHubCIStatus {
+  status: 'passing' | 'failing' | 'running' | 'unknown';
+  total_runs: number;
+  successful_runs: number;
+  failed_runs: number;
+  in_progress_runs: number;
+  runs: GitHubCIRun[];
+  commit_sha?: string | null;
+  repo_full_name?: string | null;
+}
+
+export interface ProjectMemoryItem {
+  id: string;
+  project_id: string;
+  memory_type: 'architecture' | 'decision' | 'bug' | 'requirement' | string;
+  created_at: string;
+  summary: string;
+  tags: string[];
+  task_id?: string;
+  details?: {
+    summary?: string;
+    decision?: string;
+    context?: string;
+    bug?: string;
+    fix?: string;
+    affected_files?: string[];
+    requirement?: string;
+    intent?: string;
+    acceptance_criteria?: string[];
+    task_id?: string;
+    tags?: string[];
+    [key: string]: any;
+  };
+}
+
+export interface GroupedMemoriesResponse {
+  architecture: ProjectMemoryItem[];
+  decision: ProjectMemoryItem[];
+  bug: ProjectMemoryItem[];
+  requirement: ProjectMemoryItem[];
+  [key: string]: ProjectMemoryItem[];
+}
+
+export interface CreateMemoryRequest {
+  type: 'architecture' | 'decision' | 'bug' | 'requirement' | string;
+  content: string;
+  tags?: string[];
+  task_id?: string;
+}
+
+export interface ModelConfig {
+  planning_model: string;
+  coding_model: string;
+  diagnosis_model: string;
+  summarization_model: string;
+  ollama_base_url: string;
+  temperature: number;
+  max_tokens: number;
+}
+
+export interface ModelLatencyStats {
+  avg_ms: number;
+  p50_ms: number;
+  p95_ms: number;
+  p99_ms: number;
+  count: number;
+}
+
+export interface ModelHealthData {
+  connected: boolean;
+  model_loaded: boolean;
+  latency_ms?: number | null;
+  error?: string | null;
+}
+
+export interface SecretMatch {
+  file_path: string;
+  line_number: number;
+  secret_type: string;
+  redacted_preview: string;
+  severity: 'CRITICAL' | 'HIGH' | 'MEDIUM' | string;
+}
+
+export interface SecretScanResult {
+  secrets_found: SecretMatch[];
+  files_scanned: number;
+  has_env_example_but_no_env: boolean;
+  env_in_gitignore: boolean;
+}
+
+export interface Vulnerability {
+  package: string;
+  version: string;
+  severity: 'critical' | 'high' | 'moderate' | 'low' | string;
+  description: string;
+  fix_version?: string | null;
+}
+
+export interface DependencyScanResult {
+  vulnerabilities: Vulnerability[];
+  total_deps: number;
+  outdated_count: number;
+  scan_tool: string;
+}
+
+export interface SecurityReport {
+  secrets: SecretScanResult;
+  dependencies: DependencyScanResult;
+}
+
+
+
+

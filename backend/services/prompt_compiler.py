@@ -17,6 +17,7 @@ from backend.schemas import (
     AcceptanceCriteriaItem,
 )
 from backend.services.ai_agent import agent_manager
+from backend.services.model_provider import model_router
 
 logger = logging.getLogger(__name__)
 
@@ -78,54 +79,47 @@ class PromptCompiler:
 
     async def _call_ollama_with_retry(
         self,
-        client: ollama.AsyncClient,
+        client: Any,
         model: str,
         system_prompt: str,
         user_message: str,
         timeout_seconds: float = 30.0,
     ) -> Dict[str, Any]:
         """
-        Calls Ollama with a 30s timeout and retries once with a stricter prompt if JSON parsing fails.
+        Calls ModelRouter with role='planning' and retries once with a stricter prompt if JSON parsing fails.
         """
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_message},
-        ]
-
         # Attempt 1
         try:
-            resp = await asyncio.wait_for(
-                client.chat(model=model, messages=messages, format="json", options={"temperature": 0.1}),
-                timeout=timeout_seconds,
+            resp = await model_router.complete(
+                role="planning",
+                system=system_prompt,
+                user=user_message,
+                max_tokens=2000,
+                temperature=0.1
             )
-            raw_content = resp["message"]["content"]
-            return self._clean_and_parse_json(raw_content)
-        except asyncio.TimeoutError:
-            logger.warning("Ollama call timed out after 30s on attempt 1. Retrying...")
+            return self._clean_and_parse_json(resp.content)
         except (json.JSONDecodeError, KeyError, ValueError) as parse_err:
-            logger.warning(f"Ollama JSON parse failed on attempt 1: {parse_err}. Retrying with stricter prompt...")
+            logger.warning(f"Model JSON parse failed on attempt 1: {parse_err}. Retrying with stricter prompt...")
         except Exception as call_err:
-            logger.warning(f"Ollama call failed on attempt 1: {call_err}. Retrying...")
+            logger.warning(f"Model call failed on attempt 1: {call_err}. Retrying...")
 
         # Attempt 2 (Retry with strict instruction)
-        retry_messages = [
-            {"role": "system", "content": system_prompt + " Output raw valid JSON only without markdown or explanations."},
-            {
-                "role": "user",
-                "content": (
-                    user_message
-                    + "\n\nCRITICAL: Your previous output was invalid or timed out. "
-                    "You MUST respond concisely ONLY with a parseable JSON object matching the exact keys requested."
-                ),
-            },
-        ]
-
-        resp = await asyncio.wait_for(
-            client.chat(model=model, messages=retry_messages, format="json", options={"temperature": 0.1}),
-            timeout=timeout_seconds,
+        retry_system = system_prompt + " Output raw valid JSON only without markdown or explanations."
+        retry_user = (
+            user_message
+            + "\n\nCRITICAL: Your previous output was invalid or timed out. "
+            "You MUST respond concisely ONLY with a parseable JSON object matching the exact keys requested."
         )
-        raw_content = resp["message"]["content"]
-        return self._clean_and_parse_json(raw_content)
+
+        resp = await model_router.complete(
+            role="planning",
+            system=retry_system,
+            user=retry_user,
+            max_tokens=2000,
+            temperature=0.1
+        )
+        return self._clean_and_parse_json(resp.content)
+
 
     async def compile(
         self,

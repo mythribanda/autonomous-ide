@@ -3,6 +3,7 @@ import { useGitStore } from '../../stores/gitStore';
 import { useUIStore } from '../../stores/uiStore';
 import { CheckpointTimeline } from './CheckpointTimeline';
 import { DiffViewerModal } from '../editor/DiffViewerModal';
+import { GithubIcon } from '../GitHub';
 import {
   GitBranch,
   GitCommit,
@@ -24,7 +25,7 @@ export const GitView: React.FC = () => {
     openDiffModal,
     createCheckpoint
   } = useGitStore();
-  const { addToast } = useUIStore();
+  const { addToast, setActiveView } = useUIStore();
 
   const stagedChanges = changes.filter((c) => c.staged);
 
@@ -78,6 +79,14 @@ export const GitView: React.FC = () => {
           >
             <Sparkles size={12} className="text-[#007ACC]" />
             <span>Create AI Checkpoint</span>
+          </button>
+
+          <button
+            onClick={() => setActiveView('github')}
+            className="px-3 py-1.5 rounded-sm bg-[#007ACC]/15 hover:bg-[#007ACC]/25 border border-[#007ACC]/30 text-[#007ACC] hover:text-white text-xs font-mono flex items-center gap-1.5 transition-colors cursor-pointer"
+          >
+            <GithubIcon size={12} />
+            <span>GitHub Hub</span>
           </button>
         </div>
       </div>

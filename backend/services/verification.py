@@ -19,6 +19,7 @@ from backend.schemas import (
     CriterionCheck,
 )
 from backend.services.project_scanner import ProjectScanner
+from backend.services.model_provider import model_router
 
 logger = logging.getLogger(__name__)
 
@@ -396,18 +397,13 @@ class VerificationService:
             evidence = f"Verified implementation against build status and {len(state.files_modified)} modified files."
 
             try:
-                resp = await asyncio.wait_for(
-                    self.client.chat(
-                        model=model_name,
-                        messages=[
-                            {"role": "system", "content": system_prompt},
-                            {"role": "user", "content": user_prompt}
-                        ],
-                        options={"temperature": 0.0}
-                    ),
-                    timeout=15.0
+                resp = await model_router.complete(
+                    role="diagnosis",
+                    system=system_prompt,
+                    user=user_prompt,
+                    temperature=0.0
                 )
-                parsed = self._clean_and_parse_json(resp.message.content)
+                parsed = self._clean_and_parse_json(resp.content)
                 met = bool(parsed.get("met", True))
                 evidence = str(parsed.get("evidence", evidence))
             except Exception:
