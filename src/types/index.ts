@@ -211,6 +211,7 @@ export interface SystemSettings {
 
 export type ActivityView =
   | 'home'
+  | 'dashboard'
   | 'explorer'
   | 'tasks'
   | 'intelligence'
@@ -221,4 +222,5 @@ export type ActivityView =
   | 'git'
   | 'terminal'
   | 'security'
+  | 'evaluation'
   | 'settings';

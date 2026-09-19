@@ -23,8 +23,12 @@ import { ApprovalDialog } from '../agent/ApprovalDialog';
 import { TaskHistory } from '../Tasks/TaskHistory';
 import { TaskList } from '../Tasks/TaskList';
 import { EmergencyStop } from '../Controls/EmergencyStop';
+import { ProjectDashboard } from '../Dashboard';
+import { EvaluationDashboard } from '../Evaluation';
+import { useProjectStore } from '../../store/projectStore';
 
 export const AppShell: React.FC = () => {
+  const { currentProject, projectId } = useProjectStore();
   const {
     activeView,
     isAgentPanelOpen,
@@ -36,8 +40,10 @@ export const AppShell: React.FC = () => {
 
   const renderMainContent = () => {
     switch (activeView) {
+      case 'dashboard':
+        return <ProjectDashboard />;
       case 'home':
-        return <WelcomeScreen />;
+        return (currentProject || projectId) ? <ProjectDashboard /> : <WelcomeScreen />;
       case 'tasks':
         return <TaskHistory />;
       case 'intelligence':
@@ -52,6 +58,8 @@ export const AppShell: React.FC = () => {
         return <GitView />;
       case 'security':
         return <SecurityView />;
+      case 'evaluation':
+        return <EvaluationDashboard />;
       case 'explorer':
       default:
         return <EditorArea />;

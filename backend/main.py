@@ -20,6 +20,7 @@ from backend.routers import (
     health_router,
     prompt_router
 )
+from backend.routers.terminal import handle_terminal_ws
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -130,3 +131,9 @@ async def websocket_global_endpoint(websocket: WebSocket):
             await websocket.send_text(json.dumps(response))
     except WebSocketDisconnect:
         await agent_manager.unregister_subscriber(websocket, task_id=None)
+
+
+# Terminal streaming WebSocket endpoint
+@app.websocket("/ws/terminal/{project_id}")
+async def websocket_terminal_endpoint(websocket: WebSocket, project_id: str):
+    await handle_terminal_ws(websocket, project_id)

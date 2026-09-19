@@ -619,3 +619,77 @@ class PromptCompileRequest(BaseModel):
     prompt: str
     project_id: Optional[str] = None
 
+
+# Terminal
+class TerminalExecuteRequest(BaseModel):
+    command: str
+    cwd: Optional[str] = None
+    project_id: Optional[str] = None
+    timeout_seconds: int = 30
+
+
+class TerminalExecuteResponse(BaseModel):
+    stdout: str
+    stderr: str
+    exit_code: int
+    timed_out: bool = False
+    execution_time_ms: float
+    command_classification: Optional[CommandClassification] = None
+    # Legacy alias kept for backward-compat with existing store
+    duration_ms: Optional[float] = None
+
+
+class TerminalHistoryItem(BaseModel):
+    id: str
+    command: str
+    cwd: Optional[str] = None
+    exit_code: Optional[int] = None
+    timestamp: datetime
+    project_id: str
+
+
+class TerminalStreamMessage(BaseModel):
+    type: str   # "stdout" | "stderr" | "exit" | "error"
+    data: str
+    exit_code: Optional[int] = None
+
+
+# Dashboard Schemas
+class RepoStats(BaseModel):
+    file_count: int = 0
+    languages: Dict[str, float] = Field(default_factory=dict)
+    languages_breakdown: Dict[str, int] = Field(default_factory=dict)
+    dependency_count: int = 0
+    test_coverage: Optional[float] = None
+    last_commit: Optional[Dict[str, Any]] = None
+    branch: str = "main"
+    is_clean: bool = True
+    uncommitted_count: int = 0
+
+
+class HealthCheckItem(BaseModel):
+    status: str
+    title: str
+    detail: str
+    command: str
+
+
+class ProjectHealthStats(BaseModel):
+    build_status: HealthCheckItem
+    test_status: HealthCheckItem
+    type_status: HealthCheckItem
+    security_status: HealthCheckItem
+
+
+class ProjectDashboardStats(BaseModel):
+    project_id: str
+    tasks_completed: int = 0
+    tasks_failed: int = 0
+    total_recovery_attempts: int = 0
+    total_human_interventions: int = 0
+    avg_execution_time_seconds: float = 0.0
+    test_pass_rate: float = 100.0
+    recent_tasks: List[Dict[str, Any]] = Field(default_factory=list)
+    repo_stats: RepoStats
+    health: ProjectHealthStats
+

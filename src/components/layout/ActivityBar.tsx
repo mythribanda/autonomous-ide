@@ -17,6 +17,8 @@ import {
   Radar,
   RefreshCw,
   ListTodo,
+  LayoutDashboard,
+  GraduationCap,
   LucideIcon
 } from 'lucide-react';
 import { clsx } from 'clsx';
@@ -36,6 +38,7 @@ export const ActivityBar: React.FC = () => {
   const { toggleOpen: toggleTerminal, isOpen: isTerminalOpen } = useTerminalStore();
 
   const navItems: NavItem[] = [
+    { id: 'dashboard', label: 'Project Dashboard', icon: LayoutDashboard },
     { id: 'home', label: 'Welcome', icon: Home },
     { id: 'explorer', label: 'Explorer', icon: FolderTree },
     { id: 'tasks', label: 'Tasks & History', icon: ListTodo },
@@ -61,6 +64,7 @@ export const ActivityBar: React.FC = () => {
       onClickCustom: () => toggleTerminal()
     },
     { id: 'security', label: 'Security & Permissions', icon: ShieldCheck },
+    { id: 'evaluation', label: 'Research & Evaluation', icon: GraduationCap },
     {
       id: 'settings',
       label: 'Settings',

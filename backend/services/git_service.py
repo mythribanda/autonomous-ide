@@ -310,6 +310,29 @@ class GitService:
     async def get_file_diff(self, repo_path: str, file_path: str, old_commit: str = "HEAD") -> FileDiff:
         return await asyncio.to_thread(self._sync_get_file_diff, repo_path, file_path, old_commit)
 
+    def _sync_revert_file(self, repo_path: str, file_path: str) -> bool:
+        repo = self._get_repo(repo_path)
+        if not repo:
+            return False
+        try:
+            if repo.head.is_valid():
+                repo.git.checkout("HEAD", "--", file_path)
+            else:
+                repo.git.checkout("--", file_path)
+            return True
+        except Exception:
+            target = Path(repo_path) / file_path
+            if target.exists() and target.is_file():
+                try:
+                    target.unlink()
+                    return True
+                except Exception:
+                    pass
+            return False
+
+    async def revert_file(self, repo_path: str, file_path: str) -> bool:
+        return await asyncio.to_thread(self._sync_revert_file, repo_path, file_path)
+
     def _sync_rollback(self, repo_path: str, commit_hash: str) -> Tuple[bool, int, str]:
         repo = self._get_repo(repo_path)
         if not repo:
@@ -450,6 +473,19 @@ class GitService:
 
     async def create_branch(self, repo_path: str, branch_name: str) -> bool:
         return await asyncio.to_thread(self._sync_create_branch, repo_path, branch_name)
+
+    def _sync_switch_branch(self, repo_path: str, branch_name: str) -> bool:
+        repo = self._get_repo(repo_path)
+        if not repo:
+            return False
+        try:
+            repo.git.checkout(branch_name)
+            return True
+        except Exception as e:
+            raise RuntimeError(f"Failed to checkout branch {branch_name}: {str(e)}")
+
+    async def switch_branch(self, repo_path: str, branch_name: str) -> bool:
+        return await asyncio.to_thread(self._sync_switch_branch, repo_path, branch_name)
 
     # Synchronous compatibility layer for legacy calls
     def rollback(self, project_path: str, commit_hash: str) -> Dict[str, Any]:

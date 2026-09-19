@@ -1,16 +1,133 @@
-import React, { useRef } from 'react';
+import React, { useRef, useEffect, useCallback } from 'react';
 import Editor, { OnMount } from '@monaco-editor/react';
-import { useProjectStore } from '../../stores/projectStore';
+import { useProjectStore } from '../../store/projectStore';
+import { useEditorStore } from '../../store/editorStore';
+import { DiffEditor } from './DiffEditor';
 import { Loader2 } from 'lucide-react';
+
+// ─── Inject custom CSS for AI change highlighting & gutter icon ──────────────
+const STYLE_ID = 'monaco-ai-decorations-style';
+function ensureDecorationStyles() {
+  if (typeof document === 'undefined') return;
+  if (document.getElementById(STYLE_ID)) return;
+
+  const style = document.createElement('style');
+  style.id = STYLE_ID;
+  style.innerHTML = `
+    .ai-modified-line-highlight {
+      background: rgba(234, 88, 12, 0.08) !important;
+      border-left: 3px solid #f97316 !important;
+    }
+    .ai-modified-glyph-icon {
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+    }
+    .ai-modified-glyph-icon::before {
+      content: '🤖';
+      font-size: 11px;
+      line-height: 1;
+    }
+  `;
+  document.head.appendChild(style);
+}
 
 export const MonacoEditorContainer: React.FC = () => {
   const { openFiles, activeFileId, updateFileContent } = useProjectStore();
-  const editorRef = useRef<any>(null);
+  const {
+    activeFile: editorActiveFile,
+    isDiffOpen,
+    diffTarget,
+    aiModifiedFiles,
+    aiTouchedLines,
+    clearTouchedLines
+  } = useEditorStore();
 
-  const activeFile = openFiles.find((f) => f.id === activeFileId);
+  const editorRef = useRef<any>(null);
+  const monacoRef = useRef<any>(null);
+  const decorationsCollectionRef = useRef<any>(null);
+
+  // Active file resolution
+  const activeFile =
+    openFiles.find((f) => f.id === activeFileId || f.path === editorActiveFile) ??
+    openFiles.find((f) => f.id === activeFileId);
+
+  useEffect(() => {
+    ensureDecorationStyles();
+  }, []);
+
+  // Update decorations when file, modified status, or touched lines change
+  const applyDecorations = useCallback(() => {
+    if (!editorRef.current || !monacoRef.current || !activeFile) return;
+
+    const editor = editorRef.current;
+    const monaco = monacoRef.current;
+    const model = editor.getModel();
+    if (!model) return;
+
+    const normPath = activeFile.path.replace(/\\/g, '/');
+    const isAIModified = aiModifiedFiles.some((f) => f.replace(/\\/g, '/') === normPath);
+
+    if (!isAIModified) {
+      if (decorationsCollectionRef.current) {
+        decorationsCollectionRef.current.clear();
+      }
+      return;
+    }
+
+    // Determine lines to decorate
+    let linesToDecorate = aiTouchedLines[activeFile.path] || aiTouchedLines[normPath] || [];
+
+    // If no explicit line numbers provided, highlight all non-empty lines up to first 25 lines
+    if (linesToDecorate.length === 0) {
+      const lineCount = model.getLineCount();
+      linesToDecorate = Array.from({ length: Math.min(lineCount, 30) }, (_, i) => i + 1);
+    }
+
+    const decorations = linesToDecorate.map((lineNum) => ({
+      range: new monaco.Range(lineNum, 1, lineNum, 1),
+      options: {
+        isWholeLine: true,
+        className: 'ai-modified-line-highlight',
+        glyphMarginClassName: 'ai-modified-glyph-icon',
+        glyphMarginHoverMessage: { value: '**Modified by AI Agent** 🤖' },
+        overviewRuler: {
+          color: '#f97316',
+          position: monaco.editor.OverviewRulerLane.Left
+        }
+      }
+    }));
+
+    if (decorationsCollectionRef.current) {
+      decorationsCollectionRef.current.set(decorations);
+    } else if (editor.createDecorationsCollection) {
+      decorationsCollectionRef.current = editor.createDecorationsCollection(decorations);
+    } else {
+      decorationsCollectionRef.current = {
+        ids: editor.deltaDecorations([], decorations),
+        clear: () => {
+          if (decorationsCollectionRef.current?.ids) {
+            editor.deltaDecorations(decorationsCollectionRef.current.ids, []);
+            decorationsCollectionRef.current.ids = [];
+          }
+        },
+        set: (newDecs: any[]) => {
+          decorationsCollectionRef.current.ids = editor.deltaDecorations(
+            decorationsCollectionRef.current.ids || [],
+            newDecs
+          );
+        }
+      };
+    }
+  }, [activeFile, aiModifiedFiles, aiTouchedLines]);
+
+  useEffect(() => {
+    applyDecorations();
+  }, [applyDecorations]);
 
   const handleEditorDidMount: OnMount = (editor, monaco) => {
     editorRef.current = editor;
+    monacoRef.current = monaco;
 
     // Define authentic VS Code Dark theme
     monaco.editor.defineTheme('vscode-dark-custom', {
@@ -38,12 +155,30 @@ export const MonacoEditorContainer: React.FC = () => {
         'editorLineNumber.foreground': '#858585',
         'editorLineNumber.activeForeground': '#C6C6C6',
         'editor.selectionBackground': '#264F78',
-        'editor.inactiveSelectionBackground': '#3A3D41'
+        'editor.inactiveSelectionBackground': '#3A3D41',
+        'editorGutter.background': '#1E1E1E'
       }
     });
 
     monaco.editor.setTheme('vscode-dark-custom');
+
+    // Clear decorations when file is manually edited by user
+    editor.onDidChangeModelContent(() => {
+      if (activeFile) {
+        if (decorationsCollectionRef.current) {
+          decorationsCollectionRef.current.clear();
+        }
+        clearTouchedLines(activeFile.path);
+      }
+    });
+
+    applyDecorations();
   };
+
+  // If Diff mode is active, render DiffEditor
+  if (isDiffOpen && diffTarget) {
+    return <DiffEditor {...diffTarget} />;
+  }
 
   if (!activeFile) {
     return (
@@ -65,6 +200,7 @@ export const MonacoEditorContainer: React.FC = () => {
         onChange={(value) => {
           if (value !== undefined) {
             updateFileContent(activeFile.id, value);
+            useEditorStore.getState().updateFileContent(activeFile.path, value);
           }
         }}
         onMount={handleEditorDidMount}
@@ -79,6 +215,7 @@ export const MonacoEditorContainer: React.FC = () => {
           fontFamily: "'JetBrains Mono', 'Cascadia Code', 'Cascadia Mono', Consolas, monospace",
           fontSize: 13,
           lineHeight: 20,
+          glyphMargin: true,
           minimap: {
             enabled: true,
             maxColumn: 60,

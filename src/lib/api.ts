@@ -10,6 +10,7 @@ import {
   ImpactReport,
   TerminalExecuteRequest,
   TerminalExecuteResponse,
+  TerminalHistoryItem,
   AgentExecuteRequest,
   AgentStopRequest,
   AgentStatusResponse,
@@ -36,7 +37,10 @@ import {
   VerificationReport,
   AgentPermissionConfig,
   PermissionResult,
-  PermissionCheckRequest
+  PermissionCheckRequest,
+  FileDiffDetailResponse,
+  ProjectDashboardStats,
+  EvaluationMetrics
 } from '../types/api';
 import { PromptSpecification } from '../types';
 
@@ -183,6 +187,7 @@ export async function getImpactAnalysis(projectId: string, requirement: string):
 export async function terminalExecute(
   command: string,
   cwd?: string | null,
+  projectId?: string | null,
   timeoutSeconds?: number
 ): Promise<TerminalExecuteResponse>;
 export async function terminalExecute(
@@ -191,6 +196,7 @@ export async function terminalExecute(
 export async function terminalExecute(
   commandOrReq: string | TerminalExecuteRequest,
   cwd?: string | null,
+  projectId?: string | null,
   timeoutSeconds?: number
 ): Promise<TerminalExecuteResponse> {
   const payload: TerminalExecuteRequest =
@@ -198,7 +204,8 @@ export async function terminalExecute(
       ? {
           command: commandOrReq,
           cwd: cwd || undefined,
-          timeout_seconds: timeoutSeconds ?? 60
+          project_id: projectId || undefined,
+          timeout_seconds: timeoutSeconds ?? 30
         }
       : commandOrReq;
 
@@ -422,6 +429,40 @@ export async function getGitDiff(projectPath: string, filePath?: string): Promis
   });
 }
 
+export async function getFileDiff(projectId: string, filePath: string): Promise<FileDiffDetailResponse> {
+  const params = new URLSearchParams({ file: filePath });
+  return request<FileDiffDetailResponse>(`/git/${encodeURIComponent(projectId)}/diff?${params.toString()}`, {
+    method: 'GET'
+  });
+}
+
+export async function acceptFileChanges(projectId: string, filePath: string, content?: string): Promise<{ success: boolean }> {
+  if (content !== undefined) {
+    if (typeof window !== 'undefined' && window.electronAPI?.writeFile) {
+      try {
+        const written = await window.electronAPI.writeFile(filePath, content);
+        if (written) return { success: true };
+      } catch {
+        // Fallback
+      }
+    }
+    try {
+      await writeFile(filePath, content);
+      return { success: true };
+    } catch {
+      // Best-effort
+    }
+  }
+  return { success: true };
+}
+
+export async function revertFile(projectId: string, filePath: string): Promise<{ success: boolean; file: string }> {
+  return request<{ success: boolean; file: string }>(`/git/${encodeURIComponent(projectId)}/revert-file`, {
+    method: 'POST',
+    body: JSON.stringify({ file: filePath })
+  });
+}
+
 export async function getProjectGitStatus(projectId: string): Promise<GitStatus> {
   return request<GitStatus>(`/git/${encodeURIComponent(projectId)}/status`, {
     method: 'GET'
@@ -491,6 +532,19 @@ export async function readFile(projectPath: string, filePath?: string): Promise<
   });
 }
 
+export async function writeFile(filePath: string, content: string): Promise<{ success: boolean; path: string }> {
+  return request<{ success: boolean; path: string }>('/fs/write', {
+    method: 'POST',
+    body: JSON.stringify({ path: filePath, content })
+  });
+}
+
+export async function getTerminalHistory(projectId: string): Promise<TerminalHistoryItem[]> {
+  return request<TerminalHistoryItem[]>(`/terminal/history/${encodeURIComponent(projectId)}`, {
+    method: 'GET'
+  });
+}
+
 export async function getProjectPermissions(projectId: string): Promise<AgentPermissionConfig> {
   return request<AgentPermissionConfig>(`/projects/${encodeURIComponent(projectId)}/permissions`, {
     method: 'GET'
@@ -515,4 +569,42 @@ export async function checkProjectPermission(projectId: string, action: string, 
   });
 }
 
+export async function getDashboardStats(projectId: string): Promise<ProjectDashboardStats> {
+  return request<ProjectDashboardStats>(`/projects/${encodeURIComponent(projectId)}/stats`, {
+    method: 'GET'
+  });
+}
 
+export async function updateProjectName(projectId: string, name: string): Promise<Project> {
+  return request<Project>(`/projects/${encodeURIComponent(projectId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ name })
+  });
+}
+
+export async function switchProjectBranch(projectId: string, branchName: string): Promise<{ success: boolean; branch: string }> {
+  return request<{ success: boolean; branch: string }>(`/git/${encodeURIComponent(projectId)}/switch-branch`, {
+    method: 'POST',
+    body: JSON.stringify({ name: branchName })
+  });
+}
+
+export async function getEvaluationMetrics(projectId: string): Promise<EvaluationMetrics> {
+  return request<EvaluationMetrics>(`/projects/${encodeURIComponent(projectId)}/evaluation`, {
+    method: 'GET'
+  });
+}
+
+export async function getEvaluationReport(projectId: string): Promise<string> {
+  const url = `${API_BASE_URL}/projects/${encodeURIComponent(projectId)}/evaluation/report?format=text`;
+  const res = await fetch(url, {
+    headers: {
+      Accept: 'text/markdown'
+    }
+  });
+  if (!res.ok) {
+    const errorText = await res.text();
+    throw new ApiError(errorText || 'Failed to fetch evaluation report', 'EVALUATION_REPORT_ERROR', res.status);
+  }
+  return res.text();
+}

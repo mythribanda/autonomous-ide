@@ -29,6 +29,7 @@ import {
 } from '../lib/api';
 import { AgentWebSocket } from '../lib/websocket';
 import { useProjectStore } from './projectStore';
+import { useEditorStore } from './editorStore';
 
 export interface AgentStoreState {
   taskId: string | null;
@@ -118,6 +119,17 @@ export const useAgentStore = create<AgentStoreState>((set, get) => ({
       let tReport = state.taskReport;
 
       const evType = event.type || event.data?.type || '';
+
+      // Notify editorStore of any AI-touched files
+      const modifiedList = event.data?.files_modified || event.data?.files_changed_list;
+      if (Array.isArray(modifiedList) && modifiedList.length > 0) {
+        useEditorStore.getState().markAsAIModified(modifiedList);
+      } else if (event.data?.tool === 'write_file' || event.data?.tool === 'edit_file') {
+        const target = event.data?.tool_args?.path || event.data?.tool_args?.file || event.data?.target;
+        if (target && typeof target === 'string') {
+          useEditorStore.getState().markAsAIModified([target]);
+        }
+      }
 
       switch (evType) {
         case 'TASK_STARTED':

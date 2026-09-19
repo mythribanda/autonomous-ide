@@ -150,6 +150,17 @@ export interface FileDiff {
   new_content?: string | null;
 }
 
+export interface FileDiffDetailResponse {
+  project_id: string;
+  file?: string | null;
+  diff: string;
+  details?: FileDiff | null;
+  original?: string;
+  modified?: string;
+  lines_added?: number;
+  lines_removed?: number;
+}
+
 export interface RollbackResult {
   success: boolean;
   files_restored: number;
@@ -310,15 +321,43 @@ export interface ProjectAnalysis {
 
 export interface TerminalExecuteRequest {
   command: string;
-  cwd?: string | null;
+  cwd?: string;
+  project_id?: string;
   timeout_seconds?: number;
+}
+
+export interface TerminalCommandClassification {
+  is_test: boolean;
+  is_build: boolean;
+  is_dangerous: boolean;
+  required_permission: string;
+  risk_description: string;
 }
 
 export interface TerminalExecuteResponse {
   stdout: string;
   stderr: string;
   exit_code: number;
-  duration_ms: number;
+  timed_out: boolean;
+  execution_time_ms: number;
+  /** backward-compat alias */
+  duration_ms?: number;
+  command_classification?: TerminalCommandClassification;
+}
+
+export interface TerminalHistoryItem {
+  id: string;
+  command: string;
+  cwd?: string;
+  exit_code?: number;
+  timestamp: string;
+  project_id: string;
+}
+
+export interface TerminalStreamMessage {
+  type: 'stdout' | 'stderr' | 'exit' | 'error' | 'system' | 'echo' | 'clear';
+  data: string;
+  exit_code?: number;
 }
 
 export interface PromptCompileRequest {
@@ -468,5 +507,94 @@ export interface PermissionCheckRequest {
   path?: string | null;
 }
 
+export interface RepoStats {
+  file_count: number;
+  languages: Record<string, number>;
+  languages_breakdown: Record<string, number>;
+  dependency_count: number;
+  test_coverage?: number | null;
+  last_commit?: {
+    hash: string;
+    message: string;
+    author: string;
+    date: string;
+  } | null;
+  branch: string;
+  is_clean: boolean;
+  uncommitted_count: number;
+}
 
+export interface HealthCheckItem {
+  status: 'passing' | 'failing' | 'warning' | 'unknown';
+  title: string;
+  detail: string;
+  command: string;
+}
+
+export interface ProjectHealthStats {
+  build_status: HealthCheckItem;
+  test_status: HealthCheckItem;
+  type_status: HealthCheckItem;
+  security_status: HealthCheckItem;
+}
+
+export interface RecentTaskItem {
+  id: string;
+  title: string;
+  requirement: string;
+  status: string;
+  created_at: string | null;
+  execution_time_seconds: number;
+  files_changed: number;
+  tests_passed: number;
+  tests_failed: number;
+}
+
+export interface ProjectDashboardStats {
+  project_id: string;
+  tasks_completed: number;
+  tasks_failed: number;
+  total_recovery_attempts: number;
+  total_human_interventions: number;
+  avg_execution_time_seconds: number;
+  test_pass_rate: number;
+  recent_tasks: RecentTaskItem[];
+  repo_stats: RepoStats;
+  health: ProjectHealthStats;
+}
+
+export interface CategoryMetrics {
+  task_count: number;
+  completion_rate: number;
+  avg_time: number;
+}
+
+export interface EvaluationTimelineItem {
+  task_index: number;
+  timestamp: string | null;
+  cumulative_completed: number;
+  cumulative_failed: number;
+  status: string;
+  title: string;
+}
+
+export interface EvaluationMetrics {
+  task_completion_rate: number;
+  test_success_rate: number;
+  recovery_rate: number;
+  human_intervention_rate: number;
+  avg_recovery_iterations: number;
+  avg_execution_time_seconds: number;
+  median_execution_time_seconds: number;
+  avg_files_changed_per_task: number;
+  total_tasks: number;
+  total_recovery_attempts: number;
+  total_human_interventions: number;
+  model_avg_latency_ms: number;
+  verification_success_rate: number;
+  by_intent_category: Record<string, CategoryMetrics>;
+  by_mode: Record<string, CategoryMetrics>;
+  recovery_iterations_distribution: Record<string, number>;
+  completion_timeline: EvaluationTimelineItem[];
+}
 

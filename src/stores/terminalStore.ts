@@ -1,70 +1,156 @@
 import { create } from 'zustand';
-import { terminalExecute, ApiError } from '../lib/api';
+import { terminalExecute, getTerminalHistory, ApiError } from '../lib/api';
 import { useProjectStore } from '../store/projectStore';
+import { TerminalWebSocket, TerminalStreamFrame } from '../lib/terminalWebSocket';
+import { TerminalHistoryItem } from '../types/api';
 
 export type TerminalTab = 'terminal' | 'output' | 'problems' | 'tests' | 'logs';
 
+// ─── Line types ───────────────────────────────────────────────────────────────
+
 export interface TerminalLine {
   id: string;
-  type: 'input' | 'output' | 'error' | 'system';
+  /** 'input' = user command echo, 'stdout' | 'stderr' = process output, 'system' = IDE message, 'exit' = exit code line */
+  type: 'input' | 'stdout' | 'stderr' | 'system' | 'exit' | 'error';
+  /** Legacy alias used by older parts of the codebase */
+  output?: string;
   content: string;
   timestamp: string;
 }
 
+export interface OutputLine {
+  id: string;
+  /** 'agent' = run by autonomous agent, 'build' = IDE-triggered build, 'test' = test runner output */
+  source: 'agent' | 'build' | 'test';
+  type: 'command' | 'stdout' | 'stderr' | 'exit' | 'system';
+  content: string;
+  timestamp: string;
+}
+
+// ─── Multi-tab session ────────────────────────────────────────────────────────
+
+export interface TerminalSession {
+  id: string;
+  name: string;
+  cwd: string;
+  lines: TerminalLine[];
+  commandHistory: string[];
+  historyIndex: number;
+}
+
+// ─── Store state ──────────────────────────────────────────────────────────────
+
 interface TerminalState {
+  /** Active panel tab */
   activeTab: TerminalTab;
   isOpen: boolean;
   isMaximized: boolean;
-  commandHistory: string[];
-  lines: TerminalLine[];
-  outputLogs: string[];
+
+  /** Multi-session state */
+  sessions: TerminalSession[];
+  activeSessionId: string;
+
+  /** Agent / build output lines */
+  outputLines: OutputLine[];
+
+  /** Legacy compat — problems / system logs */
   systemProblems: { file: string; line: number; message: string; severity: 'warning' | 'error' }[];
   isLoading: boolean;
   error: string | null;
-  
-  // Actions
+
+  // ─ Actions ─────────────────────────────────────────────────────────────────
+
   setActiveTab: (tab: TerminalTab) => void;
   toggleOpen: () => void;
   setOpen: (open: boolean) => void;
   toggleMaximize: () => void;
+
+  // Session actions
+  addSession: () => void;
+  closeSession: (id: string) => void;
+  setActiveSession: (id: string) => void;
+
+  // Terminal execution
   executeCommand: (cmd: string, cwd?: string) => Promise<void>;
   clearTerminal: () => void;
+
+  // WebSocket terminal
+  connectWs: (projectId: string, cwd?: string) => void;
+  disconnectWs: () => void;
+  sendCommand: (cmd: string) => void;
+
+  // Output panel
+  addOutputLine: (line: Omit<OutputLine, 'id' | 'timestamp'>) => void;
+  clearOutput: () => void;
+
+  // History
+  loadHistory: (projectId: string) => Promise<void>;
+
+  // Legacy
   addLog: (log: string) => void;
+  outputLogs: string[];
 }
 
-const initialLines: TerminalLine[] = [
-  {
-    id: 'tl-1',
-    type: 'system',
-    content: 'AutonomousDev Shell v1.0.0 [Ready] — Project Workspace: C:\\Projects\\EduSim',
-    timestamp: '10:30:00'
-  },
-  {
-    id: 'tl-2',
-    type: 'input',
-    content: 'npm test',
-    timestamp: '10:32:15'
-  },
-  {
-    id: 'tl-3',
-    type: 'output',
-    content: `Running tests...\n\n ✓ Login\n ✓ Dashboard\n ✓ Formula Lab\n ✓ AI Tutor\n ✓ Theme\n\n42 passed\n0 failed`,
-    timestamp: '10:32:16'
-  }
-];
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+let activeWs: TerminalWebSocket | null = null;
+let activeWsSessionId: string | null = null;
+
+function makeSessionId() {
+  return `sess-${Date.now().toString(36)}`;
+}
+
+function nowTs() {
+  return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+function makeSession(name: string, cwd: string, welcomeMsg?: string): TerminalSession {
+  const id = makeSessionId();
+  return {
+    id,
+    name,
+    cwd,
+    commandHistory: [],
+    historyIndex: -1,
+    lines: [
+      {
+        id: `${id}-welcome`,
+        type: 'system',
+        content: welcomeMsg ?? `Terminal ready. Working directory: ${cwd}`,
+        timestamp: nowTs()
+      }
+    ]
+  };
+}
+
+function appendToSession(sessions: TerminalSession[], id: string, line: TerminalLine): TerminalSession[] {
+  return sessions.map((s) =>
+    s.id === id ? { ...s, lines: [...s.lines, line] } : s
+  );
+}
+
+function lineId() {
+  return `ln-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+}
+
+// ─── Initial state ────────────────────────────────────────────────────────────
+
+const initialCwd = 'C:\\Projects';
+const initialSession = makeSession('bash 1', initialCwd);
+
+// ─── Store ────────────────────────────────────────────────────────────────────
 
 export const useTerminalStore = create<TerminalState>((set, get) => ({
   activeTab: 'terminal',
   isOpen: true,
   isMaximized: false,
-  commandHistory: ['npm test', 'git status', 'pytest'],
-  lines: initialLines,
-  outputLogs: [
-    '[INFO 10:32:04] AI Agent attached to workspace EduSim',
-    '[INFO 10:32:06] AST parser indexed 48 components in 32ms',
-    '[INFO 10:32:12] File created: frontend/src/services/theme.ts',
-    '[SUCCESS 10:32:16] Vitest test runner exited with status 0'
-  ],
+
+  sessions: [initialSession],
+  activeSessionId: initialSession.id,
+
+  outputLines: [],
+  outputLogs: [],
+
   systemProblems: [
     {
       file: 'frontend/src/components/ThemeToggle.tsx',
@@ -76,96 +162,291 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
   isLoading: false,
   error: null,
 
+  // ─── Panel ────────────────────────────────────────────────────────────────
+
   setActiveTab: (activeTab) => set({ activeTab, isOpen: true }),
-  toggleOpen: () => set((state) => ({ isOpen: !state.isOpen })),
+  toggleOpen: () => set((s) => ({ isOpen: !s.isOpen })),
   setOpen: (isOpen) => set({ isOpen }),
-  toggleMaximize: () => set((state) => ({ isMaximized: !state.isMaximized })),
+  toggleMaximize: () => set((s) => ({ isMaximized: !s.isMaximized })),
+
+  // ─── Sessions ─────────────────────────────────────────────────────────────
+
+  addSession: () => {
+    const { sessions } = get();
+    const projectPath = useProjectStore.getState().projectPath ?? initialCwd;
+    const newSession = makeSession(`bash ${sessions.length + 1}`, projectPath);
+    set({ sessions: [...sessions, newSession], activeSessionId: newSession.id });
+  },
+
+  closeSession: (id) => {
+    set((state) => {
+      if (state.sessions.length <= 1) return state;
+      const filtered = state.sessions.filter((s) => s.id !== id);
+      const newActive =
+        state.activeSessionId === id
+          ? (filtered[filtered.length - 1]?.id ?? filtered[0].id)
+          : state.activeSessionId;
+      return { sessions: filtered, activeSessionId: newActive };
+    });
+  },
+
+  setActiveSession: (id) => set({ activeSessionId: id }),
+
+  // ─── Execute via HTTP (fallback / legacy) ─────────────────────────────────
 
   executeCommand: async (cmd: string, cwd?: string) => {
     if (!cmd.trim()) return;
-    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    
+
+    const { activeSessionId } = get();
+    const time = nowTs();
+
     if (cmd.trim().toLowerCase() === 'clear') {
-      set({ lines: [], error: null });
+      set((state) => ({
+        sessions: state.sessions.map((s) =>
+          s.id === activeSessionId ? { ...s, lines: [] } : s
+        ),
+        error: null
+      }));
       return;
     }
 
-    const inputLine: TerminalLine = {
-      id: `line-${Date.now()}-in`,
-      type: 'input',
-      content: cmd,
-      timestamp: time
-    };
-
+    // Echo command
     set((state) => ({
-      lines: [...state.lines, inputLine],
-      commandHistory: [...state.commandHistory, cmd],
+      sessions: appendToSession(state.sessions, activeSessionId, {
+        id: lineId(),
+        type: 'input',
+        content: cmd,
+        timestamp: time
+      }),
       isLoading: true,
       error: null
     }));
 
-    // Resolve target cwd: use explicitly provided cwd, or project path if project is active, or undefined
+    // Add to history
+    set((state) => ({
+      sessions: state.sessions.map((s) =>
+        s.id === activeSessionId
+          ? { ...s, commandHistory: [...s.commandHistory, cmd], historyIndex: -1 }
+          : s
+      )
+    }));
+
     const project = useProjectStore.getState().project;
     const projectPath = useProjectStore.getState().projectPath;
-    const targetCwd = cwd || (project ? projectPath : undefined);
+    const projectId = useProjectStore.getState().projectId ?? undefined;
+    const targetCwd = cwd ?? (project ? projectPath : undefined) ?? undefined;
 
     try {
-      const res = await terminalExecute(cmd, targetCwd);
-
-      let outputContent = '';
-      if (res.stdout && res.stderr) {
-        outputContent = `${res.stdout}\n${res.stderr}`;
-      } else if (res.stdout) {
-        outputContent = res.stdout;
-      } else if (res.stderr) {
-        outputContent = res.stderr;
-      } else {
-        outputContent = res.exit_code === 0
-          ? `[Process completed with exit code 0 (${res.duration_ms}ms)]`
-          : `[Process exited with code ${res.exit_code}]`;
-      }
+      const res = await terminalExecute(cmd, targetCwd, projectId);
 
       const isSuccess = res.exit_code === 0;
-      const outputLine: TerminalLine = {
-        id: `line-${Date.now()}-out`,
-        type: isSuccess ? 'output' : 'error',
-        content: outputContent,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-      };
 
+      if (res.stdout) {
+        set((state) => ({
+          sessions: appendToSession(state.sessions, activeSessionId, {
+            id: lineId(),
+            type: 'stdout',
+            content: res.stdout,
+            timestamp: nowTs()
+          })
+        }));
+      }
+      if (res.stderr) {
+        set((state) => ({
+          sessions: appendToSession(state.sessions, activeSessionId, {
+            id: lineId(),
+            type: 'stderr',
+            content: res.stderr,
+            timestamp: nowTs()
+          })
+        }));
+      }
+
+      const exitMs = res.execution_time_ms ?? res.duration_ms ?? 0;
       set((state) => ({
-        lines: [...state.lines, outputLine],
+        sessions: appendToSession(state.sessions, activeSessionId, {
+          id: lineId(),
+          type: 'exit',
+          content: `[Process exited with code ${res.exit_code} in ${exitMs.toFixed(0)}ms]`,
+          timestamp: nowTs()
+        }),
         isLoading: false,
         error: isSuccess ? null : `Process exited with code ${res.exit_code}`
       }));
     } catch (err: unknown) {
-      let errorMessage = 'Failed to execute command';
-      let errorCode = 'TERMINAL_ERROR';
-
-      if (err instanceof ApiError) {
-        errorMessage = err.message;
-        errorCode = err.code;
-      } else if (err instanceof Error) {
-        errorMessage = err.message;
-      }
-
-      const displayMessage = `[${errorCode}] ${errorMessage}`;
-      const errorLine: TerminalLine = {
-        id: `line-${Date.now()}-err`,
-        type: 'error',
-        content: displayMessage,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-      };
+      let msg = 'Failed to execute command';
+      if (err instanceof ApiError) msg = `[${err.code}] ${err.message}`;
+      else if (err instanceof Error) msg = err.message;
 
       set((state) => ({
-        lines: [...state.lines, errorLine],
+        sessions: appendToSession(state.sessions, activeSessionId, {
+          id: lineId(),
+          type: 'error',
+          content: msg,
+          timestamp: nowTs()
+        }),
         isLoading: false,
-        error: errorMessage
+        error: msg
       }));
     }
   },
 
-  clearTerminal: () => set({ lines: [], error: null }),
+  clearTerminal: () => {
+    const { activeSessionId } = get();
+    set((state) => ({
+      sessions: state.sessions.map((s) =>
+        s.id === activeSessionId ? { ...s, lines: [] } : s
+      ),
+      error: null
+    }));
+  },
+
+  // ─── WebSocket terminal ───────────────────────────────────────────────────
+
+  connectWs: (projectId: string, cwd?: string) => {
+    // Disconnect old WS if switching project
+    if (activeWs) {
+      activeWs.disconnect();
+      activeWs = null;
+    }
+
+    const { activeSessionId } = get();
+    activeWsSessionId = activeSessionId;
+
+    const projectPath = cwd ?? useProjectStore.getState().projectPath ?? initialCwd;
+
+    // Update session cwd
+    set((state) => ({
+      sessions: state.sessions.map((s) =>
+        s.id === activeSessionId ? { ...s, cwd: projectPath } : s
+      )
+    }));
+
+    const ws = new TerminalWebSocket(projectId);
+    ws.setCwd(projectPath);
+    activeWs = ws;
+
+    ws.onMessage((frame: TerminalStreamFrame) => {
+      const sessId = activeWsSessionId ?? get().activeSessionId;
+
+      if (frame.type === 'clear') {
+        set((state) => ({
+          sessions: state.sessions.map((s) => s.id === sessId ? { ...s, lines: [] } : s)
+        }));
+        return;
+      }
+
+      if (frame.type === 'system') {
+        set((state) => ({
+          sessions: appendToSession(state.sessions, sessId, {
+            id: lineId(),
+            type: 'system',
+            content: frame.data,
+            timestamp: nowTs()
+          })
+        }));
+        return;
+      }
+
+      if (frame.type === 'echo') {
+        set((state) => ({
+          sessions: appendToSession(state.sessions, sessId, {
+            id: lineId(),
+            type: 'input',
+            content: frame.data,
+            timestamp: nowTs()
+          })
+        }));
+        return;
+      }
+
+      const lineType =
+        frame.type === 'stdout' ? 'stdout' :
+        frame.type === 'stderr' ? 'stderr' :
+        frame.type === 'exit'   ? 'exit'   :
+        'error';
+
+      set((state) => ({
+        sessions: appendToSession(state.sessions, sessId, {
+          id: lineId(),
+          type: lineType,
+          content: frame.data,
+          timestamp: nowTs()
+        })
+      }));
+
+      // Also add command output to the output panel (for observability)
+      if (frame.type === 'stdout' || frame.type === 'stderr') {
+        set((state) => ({
+          outputLogs: [...state.outputLogs, frame.data.trimEnd()]
+        }));
+      }
+    });
+
+    ws.connect();
+  },
+
+  disconnectWs: () => {
+    activeWs?.disconnect();
+    activeWs = null;
+    activeWsSessionId = null;
+  },
+
+  sendCommand: (cmd: string) => {
+    const { activeSessionId } = get();
+    activeWsSessionId = activeSessionId;
+
+    // Add to history
+    set((state) => ({
+      sessions: state.sessions.map((s) =>
+        s.id === activeSessionId
+          ? { ...s, commandHistory: [...s.commandHistory, cmd], historyIndex: -1 }
+          : s
+      )
+    }));
+
+    if (activeWs?.isConnected) {
+      activeWs.sendCommand(cmd);
+    } else {
+      // Fallback to HTTP execute
+      get().executeCommand(cmd);
+    }
+  },
+
+  // ─── Output panel ─────────────────────────────────────────────────────────
+
+  addOutputLine: (line) => {
+    set((state) => ({
+      outputLines: [
+        ...state.outputLines,
+        { ...line, id: lineId(), timestamp: nowTs() }
+      ]
+    }));
+  },
+
+  clearOutput: () => set({ outputLines: [] }),
+
+  // ─── History from DB ──────────────────────────────────────────────────────
+
+  loadHistory: async (projectId: string) => {
+    try {
+      const items: TerminalHistoryItem[] = await getTerminalHistory(projectId);
+      const cmds = items.map((h) => h.command);
+
+      const { activeSessionId } = get();
+      set((state) => ({
+        sessions: state.sessions.map((s) =>
+          s.id === activeSessionId
+            ? { ...s, commandHistory: cmds, historyIndex: -1 }
+            : s
+        )
+      }));
+    } catch {
+      // ignore — history is best-effort
+    }
+  },
+
+  // ─── Legacy ───────────────────────────────────────────────────────────────
+
   addLog: (log) => set((state) => ({ outputLogs: [...state.outputLogs, log] }))
 }));
-

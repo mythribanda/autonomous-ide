@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -83,7 +84,11 @@ async def get_project_diff(
             "project_id": project_id,
             "file": file,
             "diff": file_diff.diff_text,
-            "details": file_diff.model_dump()
+            "details": file_diff.model_dump(),
+            "original": file_diff.old_content or "",
+            "modified": file_diff.new_content or "",
+            "lines_added": file_diff.lines_added,
+            "lines_removed": file_diff.lines_removed,
         }
     diff_text = await git_service.get_diff(project.path)
     return {
@@ -91,6 +96,30 @@ async def get_project_diff(
         "file": None,
         "diff": diff_text
     }
+
+
+class GitRevertFileBody(BaseModel):
+    file: Optional[str] = None
+
+
+@router.post("/{project_id}/revert-file")
+@router.post("/{project_id}/revert")
+async def revert_project_file(
+    project_id: str,
+    body: Optional[GitRevertFileBody] = None,
+    file: Optional[str] = Query(None, description="Specific file path to revert"),
+    db: AsyncSession = Depends(get_db)
+):
+    """Restores a file to its git HEAD state."""
+    project = await _resolve_project_or_404(project_id, db)
+    target_file = (body.file if body and body.file else None) or file
+    if not target_file:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File path required to revert"
+        )
+    success = await git_service.revert_file(project.path, target_file)
+    return {"success": success, "file": target_file}
 
 
 @router.post("/{project_id}/rollback", response_model=RollbackResult)
@@ -162,6 +191,29 @@ async def create_project_branch(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         )
+
+
+class GitBranchSwitchRequest(BaseModel):
+    name: str
+
+
+@router.post("/{project_id}/switch-branch")
+async def switch_project_branch(
+    project_id: str,
+    body: GitBranchSwitchRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """Switches the working directory to the specified git branch."""
+    project = await _resolve_project_or_404(project_id, db)
+    try:
+        ok = await git_service.switch_branch(project.path, body.name)
+        return {"success": ok, "branch": body.name}
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
 
 
 # ===================================================================
