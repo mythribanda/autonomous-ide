@@ -13,6 +13,10 @@ export interface ElectronAPI {
   openExternal?: (url: string) => Promise<void>;
   onAgentEvent: (callback: (data: any) => void) => void;
   removeAgentEventListener: (callback?: (data: any) => void) => void;
+  loadSettings?: () => Promise<any>;
+  saveSettings?: (settings: any) => Promise<boolean>;
+  onShortcut?: (callback: (shortcutId: string) => void) => void;
+  removeShortcutListener?: () => void;
 }
 
 declare global {

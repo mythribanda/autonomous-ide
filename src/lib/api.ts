@@ -60,7 +60,13 @@ import {
   ModelHealthData,
   SecretScanResult,
   DependencyScanResult,
-  SecurityReport
+  SecurityReport,
+  DockerConfig,
+  GenerateDockerFileResponse,
+  GenerateComposeResponse,
+  BuildResult,
+  ContainerResult,
+  ContainerInfo
 } from '../types/api';
 import { PromptSpecification } from '../types';
 
@@ -754,5 +760,113 @@ export async function runSecurityScan(projectId: string): Promise<SecurityReport
   });
 }
 
+// Docker Service Endpoints
+export async function getDockerConfig(projectId: string): Promise<DockerConfig> {
+  return request<DockerConfig>(`/projects/${encodeURIComponent(projectId)}/docker/config`, {
+    method: 'GET'
+  });
+}
 
+export async function generateDockerfile(projectId: string): Promise<GenerateDockerFileResponse> {
+  return request<GenerateDockerFileResponse>(`/projects/${encodeURIComponent(projectId)}/docker/generate-dockerfile`, {
+    method: 'POST'
+  });
+}
+
+export async function generateCompose(projectId: string): Promise<GenerateComposeResponse> {
+  return request<GenerateComposeResponse>(`/projects/${encodeURIComponent(projectId)}/docker/generate-compose`, {
+    method: 'POST'
+  });
+}
+
+export async function saveDockerFile(projectId: string, filename: string, content: string): Promise<{ success: boolean; saved_path: string }> {
+  return request<{ success: boolean; saved_path: string }>(`/projects/${encodeURIComponent(projectId)}/docker/save-file`, {
+    method: 'POST',
+    body: JSON.stringify({ filename, content })
+  });
+}
+
+export async function buildDockerImage(projectId: string, tag: string): Promise<BuildResult> {
+  return request<BuildResult>(`/projects/${encodeURIComponent(projectId)}/docker/build`, {
+    method: 'POST',
+    body: JSON.stringify({ tag })
+  });
+}
+
+export async function startDockerContainer(
+  projectId: string,
+  imageTag: string,
+  ports: Record<string, string>,
+  envFile?: string,
+  containerName?: string
+): Promise<ContainerResult> {
+  return request<ContainerResult>(`/projects/${encodeURIComponent(projectId)}/docker/start`, {
+    method: 'POST',
+    body: JSON.stringify({ image_tag: imageTag, ports, env_file: envFile, container_name: containerName })
+  });
+}
+
+export async function stopDockerContainer(projectId: string, containerId: string): Promise<{ success: boolean; container_id: string }> {
+  return request<{ success: boolean; container_id: string }>(`/projects/${encodeURIComponent(projectId)}/docker/stop`, {
+    method: 'POST',
+    body: JSON.stringify({ container_id: containerId })
+  });
+}
+
+export async function getDockerLogs(projectId: string, containerId: string, tail: number = 100): Promise<{ container_id: string; logs: string }> {
+  return request<{ container_id: string; logs: string }>(`/projects/${encodeURIComponent(projectId)}/docker/logs?container_id=${encodeURIComponent(containerId)}&tail=${tail}`, {
+    method: 'GET'
+  });
+}
+
+export async function getDockerContainers(projectId: string): Promise<ContainerInfo[]> {
+  return request<ContainerInfo[]>(`/projects/${encodeURIComponent(projectId)}/docker/containers`, {
+    method: 'GET'
+  });
+}
+
+export async function getSystemSettings(): Promise<Record<string, any>> {
+  return request<Record<string, any>>('/settings', {
+    method: 'GET'
+  });
+}
+
+export async function saveSystemSettings(settings: Record<string, any>): Promise<Record<string, any>> {
+  return request<Record<string, any>>('/settings', {
+    method: 'PUT',
+    body: JSON.stringify(settings)
+  });
+}
+
+// ─── Audit Log ────────────────────────────────────────────────────────────────
+
+export interface AuditLogEntry {
+  id: string;
+  project_id: string;
+  task_id: string | null;
+  action_type: string;
+  description: string;
+  metadata: Record<string, unknown> | null;
+  timestamp: string;
+  user_initiated: boolean;
+}
+
+export const getAuditLog = async (
+  projectId: string,
+  page: number = 1,
+  limit: number = 50,
+  actionType?: string
+): Promise<{
+  total: number;
+  page: number;
+  limit: number;
+  pages: number;
+  entries: AuditLogEntry[];
+}> => {
+  const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+  if (actionType) params.set('action_type', actionType);
+  const res = await fetch(`${API_BASE_URL}/projects/${projectId}/audit-log?${params}`);
+  if (!res.ok) throw new Error(`Audit log fetch failed: ${res.status}`);
+  return res.json();
+};
 

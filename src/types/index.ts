@@ -223,6 +223,8 @@ export type ActivityView =
   | 'github'
   | 'terminal'
   | 'security'
+  | 'docker'
   | 'evaluation'
   | 'memory'
   | 'settings';
+

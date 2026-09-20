@@ -45,6 +45,22 @@ const electronAPI = {
       ipcRenderer.removeAllListeners('agent:event');
       listeners.clear();
     }
+  },
+
+  loadSettings: (): Promise<any> => {
+    return ipcRenderer.invoke('settings:load');
+  },
+
+  saveSettings: (settings: any): Promise<boolean> => {
+    return ipcRenderer.invoke('settings:save', settings);
+  },
+
+  onShortcut: (callback: (shortcutId: string) => void): void => {
+    ipcRenderer.on('shortcut:fired', (_event: IpcRendererEvent, shortcutId: string) => callback(shortcutId));
+  },
+
+  removeShortcutListener: (): void => {
+    ipcRenderer.removeAllListeners('shortcut:fired');
   }
 };
 

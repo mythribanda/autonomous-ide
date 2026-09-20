@@ -50,6 +50,9 @@ BUILD_COMMAND_PATTERNS = [
     re.compile(r"\bmake\s+build\b", re.IGNORECASE),
     re.compile(r"\bvite\s+build\b", re.IGNORECASE),
     re.compile(r"\bwebpack\b", re.IGNORECASE),
+    re.compile(r"\bdocker\s+build\b", re.IGNORECASE),
+    re.compile(r"\bdocker\s+compose\b", re.IGNORECASE),
+    re.compile(r"\bdocker-compose\b", re.IGNORECASE),
 ]
 
 # Sensitive file patterns and names

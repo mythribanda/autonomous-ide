@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useImpactStore } from '../../stores/impactStore';
 import { useAgentStore } from '../../stores/agentStore';
 import { useUIStore } from '../../stores/uiStore';
+import { ImpactGraph } from '../Visualization';
 import { MetricCard } from '../common/MetricCard';
 import { Badge } from '../common/Badge';
 import {
@@ -317,6 +318,17 @@ export const ImpactAnalysisView: React.FC = () => {
                   ))}
                 </ul>
               )}
+            </div>
+          </div>
+
+          {/* Interactive Blast Radius Topology */}
+          <div className="space-y-2">
+            <div className="text-[11px] font-mono font-bold text-[#CCCCCC] uppercase tracking-wider flex items-center gap-1.5">
+              <Radar size={13} className="text-[#007ACC]" />
+              <span>Topological Blast Radius & Force-Directed Graph</span>
+            </div>
+            <div className="h-[460px] w-full">
+              <ImpactGraph height={460} showControls={true} />
             </div>
           </div>
 

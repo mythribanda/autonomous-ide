@@ -27,6 +27,7 @@ import { ProjectDashboard } from '../Dashboard';
 import { EvaluationDashboard } from '../Evaluation';
 import { GitHubPanel } from '../GitHub';
 import { ProjectMemoryPanel } from '../Memory';
+import { DockerPanel } from '../Docker';
 import { useProjectStore } from '../../store/projectStore';
 
 export const AppShell: React.FC = () => {
@@ -62,6 +63,8 @@ export const AppShell: React.FC = () => {
         return <GitHubPanel />;
       case 'security':
         return <SecurityView />;
+      case 'docker':
+        return <DockerPanel />;
       case 'evaluation':
         return <EvaluationDashboard />;
       case 'memory':

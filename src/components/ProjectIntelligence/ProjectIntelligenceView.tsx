@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useProjectStore } from '../../store/projectStore';
 import { ProjectScanPanel } from './ProjectScanPanel';
-import { DependencyGraph } from './DependencyGraph';
+import { ImpactGraph } from '../Visualization';
 import { ImpactReport } from './ImpactReport';
 import { MetricCard } from '../common/MetricCard';
 import { Badge } from '../common/Badge';
@@ -153,7 +153,9 @@ export const ProjectIntelligenceView: React.FC = () => {
       )}
 
       {activeTab === 'graph' && (
-        <DependencyGraph graph={knowledgeGraph} height={460} />
+        <div className="h-[600px] w-full">
+          <ImpactGraph height={600} showControls={true} />
+        </div>
       )}
 
       {activeTab === 'impact' && (

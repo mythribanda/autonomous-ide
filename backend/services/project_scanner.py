@@ -6,6 +6,7 @@ from typing import Dict, Any, List, Optional, Set, Tuple
 from collections import Counter
 
 from backend.schemas import ProjectScanResult
+from backend.services.docker_service import docker_service
 
 # Directories to skip entirely during scan
 IGNORED_DIRS: Set[str] = {
@@ -159,7 +160,10 @@ class ProjectScanner:
         entry_points = [ep for ep in ENTRY_POINT_CANDIDATES if (root / ep).exists()]
 
         # Docker, Git, CI flags
-        has_docker = self._detect_docker(root)
+        has_dockerfile = (root / "Dockerfile").exists() or (root / "docker" / "Dockerfile").exists()
+        has_compose = any((root / ind).exists() for ind in ["docker-compose.yml", "docker-compose.yaml", "compose.yaml", "compose.yml"])
+        has_docker = has_dockerfile or has_compose or (root / ".dockerignore").exists()
+        docker_daemon_running = docker_service.is_daemon_running()
         has_git = (root / ".git").exists()
         has_ci = self._detect_ci(root)
 
@@ -174,6 +178,9 @@ class ProjectScanner:
             config_files=config_files,
             test_framework=test_framework,
             has_docker=has_docker,
+            has_dockerfile=has_dockerfile,
+            has_compose=has_compose,
+            docker_daemon_running=docker_daemon_running,
             has_git=has_git,
             has_ci=has_ci,
             file_count=file_count,

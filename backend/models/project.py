@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from typing import Optional, List
 import uuid
 
-from sqlalchemy import String, Text, Integer, Float, DateTime, ForeignKey
+from sqlalchemy import String, Text, Integer, Float, DateTime, ForeignKey, Boolean
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.database import Base
@@ -27,6 +27,8 @@ class Project(Base):
 
     tasks: Mapped[List["Task"]] = relationship("Task", back_populates="project", cascade="all, delete-orphan")
     memories: Mapped[List["AgentMemory"]] = relationship("AgentMemory", back_populates="project", cascade="all, delete-orphan")
+    audit_logs: Mapped[List["AuditLog"]] = relationship("AuditLog", back_populates="project", cascade="all, delete-orphan")
+
 
 
 class Task(Base):
@@ -75,3 +77,18 @@ class AgentMemory(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
     project: Mapped["Project"] = relationship("Project", back_populates="memories")
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuid)
+    project_id: Mapped[str] = mapped_column(String(36), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    task_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("tasks.id", ondelete="SET NULL"), nullable=True, index=True)
+    action_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    metadata_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    timestamp: Mapped[datetime] = mapped_column(DateTime, default=utc_now, index=True)
+    user_initiated: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    project: Mapped["Project"] = relationship("Project", back_populates="audit_logs")

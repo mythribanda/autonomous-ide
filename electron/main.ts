@@ -1,5 +1,5 @@
 import type { IpcMainInvokeEvent, IpcMainEvent } from 'electron';
-const { app, BrowserWindow, ipcMain, dialog, session } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, session, globalShortcut } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { exec } = require('child_process');
@@ -201,15 +201,58 @@ ipcMain.on('agent:event', (_event: IpcMainEvent, data: any) => {
   }
 });
 
+// Settings load and save handlers in userData directory
+ipcMain.handle('settings:load', async (): Promise<any> => {
+  try {
+    const settingsPath = path.join(app.getPath('userData'), 'settings.json');
+    const content = await fs.promises.readFile(settingsPath, 'utf-8');
+    return JSON.parse(content);
+  } catch {
+    return null;
+  }
+});
+
+ipcMain.handle('settings:save', async (_event: IpcMainInvokeEvent, settings: any): Promise<boolean> => {
+  try {
+    const dir = app.getPath('userData');
+    await fs.promises.mkdir(dir, { recursive: true });
+    const settingsPath = path.join(dir, 'settings.json');
+    await fs.promises.writeFile(settingsPath, JSON.stringify(settings, null, 2), 'utf-8');
+    return true;
+  } catch (err) {
+    console.error('Failed to save settings to userData:', err);
+    return false;
+  }
+});
+
+// Helper: fire shortcut event to renderer
+function fireShortcut(shortcutId: string): void {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('shortcut:fired', shortcutId);
+  }
+}
+
 app.whenReady().then(() => {
   createWindow();
   connectBackendWebSocket();
+
+  // Register global keyboard shortcuts
+  globalShortcut.register('CommandOrControl+P', () => fireShortcut('focus_prompt'));
+  globalShortcut.register('CommandOrControl+`', () => fireShortcut('toggle_terminal'));
+  globalShortcut.register('CommandOrControl+Shift+E', () => fireShortcut('toggle_explorer'));
+  globalShortcut.register('CommandOrControl+Shift+G', () => fireShortcut('open_git'));
+  globalShortcut.register('CommandOrControl+,', () => fireShortcut('open_settings'));
+  globalShortcut.register('CommandOrControl+Shift+P', () => fireShortcut('command_palette'));
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();
     }
   });
+});
+
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll();
 });
 
 app.on('window-all-closed', () => {

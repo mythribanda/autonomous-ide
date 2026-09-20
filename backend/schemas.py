@@ -17,6 +17,9 @@ class ProjectScanResult(BaseModel):
     config_files: Dict[str, str] = Field(default_factory=dict)
     test_framework: Optional[str] = None
     has_docker: bool = False
+    has_dockerfile: bool = False
+    has_compose: bool = False
+    docker_daemon_running: bool = False
     has_git: bool = False
     has_ci: bool = False
     file_count: int = 0
@@ -692,4 +695,69 @@ class ProjectDashboardStats(BaseModel):
     recent_tasks: List[Dict[str, Any]] = Field(default_factory=list)
     repo_stats: RepoStats
     health: ProjectHealthStats
+
+
+# Docker Schemas
+class DockerConfig(BaseModel):
+    has_dockerfile: bool = False
+    has_compose: bool = False
+    compose_services: List[str] = Field(default_factory=list)
+    dockerfile_base_image: Optional[str] = None
+    is_daemon_running: bool = False
+
+
+class GenerateDockerFileResponse(BaseModel):
+    dockerfile: str
+    suggested_filename: str = "Dockerfile"
+
+
+class GenerateComposeResponse(BaseModel):
+    compose_yaml: str
+    suggested_filename: str = "docker-compose.yml"
+
+
+class SaveDockerFileRequest(BaseModel):
+    filename: str = "Dockerfile"
+    content: str
+
+
+class BuildDockerImageRequest(BaseModel):
+    tag: str = "latest"
+
+
+class BuildResult(BaseModel):
+    success: bool
+    image_id: Optional[str] = None
+    tag: str
+    build_time_seconds: float = 0.0
+    error: Optional[str] = None
+    logs: Optional[str] = None
+
+
+class StartContainerRequest(BaseModel):
+    image_tag: str
+    ports: Dict[str, str] = Field(default_factory=dict)
+    env_file: Optional[str] = None
+    container_name: Optional[str] = None
+
+
+class ContainerResult(BaseModel):
+    success: bool
+    container_id: Optional[str] = None
+    container_name: Optional[str] = None
+    ports: Dict[str, str] = Field(default_factory=dict)
+    error: Optional[str] = None
+
+
+class StopContainerRequest(BaseModel):
+    container_id: str
+
+
+class ContainerInfo(BaseModel):
+    id: str
+    name: str
+    image: str
+    status: str
+    ports: Dict[str, str] = Field(default_factory=dict)
+    created: str
 

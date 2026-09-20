@@ -20,6 +20,7 @@ import {
   LayoutDashboard,
   GraduationCap,
   Brain,
+  Container,
   LucideIcon
 } from 'lucide-react';
 import { GithubIcon } from '../GitHub';
@@ -67,6 +68,7 @@ export const ActivityBar: React.FC = () => {
       onClickCustom: () => toggleTerminal()
     },
     { id: 'security', label: 'Security & Permissions', icon: ShieldCheck },
+    { id: 'docker', label: 'Docker & Containers', icon: Container },
     { id: 'evaluation', label: 'Research & Evaluation', icon: GraduationCap },
     { id: 'memory', label: 'Project Memory & Knowledge', icon: Brain },
     {

@@ -254,6 +254,9 @@ export interface ProjectScanResult {
   config_files: Record<string, string>;
   test_framework?: string | null;
   has_docker: boolean;
+  has_dockerfile?: boolean;
+  has_compose?: boolean;
+  docker_daemon_running?: boolean;
   has_git: boolean;
   has_ci: boolean;
   file_count: number;
@@ -818,6 +821,46 @@ export interface SecurityReport {
   dependencies: DependencyScanResult;
 }
 
+export interface DockerConfig {
+  has_dockerfile: boolean;
+  has_compose: boolean;
+  compose_services: string[];
+  dockerfile_base_image?: string | null;
+  is_daemon_running: boolean;
+}
 
+export interface GenerateDockerFileResponse {
+  dockerfile: string;
+  suggested_filename: string;
+}
 
+export interface GenerateComposeResponse {
+  compose_yaml: string;
+  suggested_filename: string;
+}
 
+export interface BuildResult {
+  success: boolean;
+  image_id?: string | null;
+  tag: string;
+  build_time_seconds: number;
+  error?: string | null;
+  logs?: string | null;
+}
+
+export interface ContainerResult {
+  success: boolean;
+  container_id?: string | null;
+  container_name?: string | null;
+  ports: Record<string, string>;
+  error?: string | null;
+}
+
+export interface ContainerInfo {
+  id: string;
+  name: string;
+  image: string;
+  status: string;
+  ports: Record<string, string>;
+  created: string;
+}
