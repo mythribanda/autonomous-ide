@@ -10,6 +10,7 @@ from backend.routers.github import router as github_router
 from backend.routers.docker import router as docker_router
 from backend.routers.settings import router as settings_router
 from backend.routers.audit import router as audit_router
+from backend.routers.evaluation import router as evaluation_router
 
 __all__ = [
     "projects_router",
@@ -24,6 +25,7 @@ __all__ = [
     "docker_router",
     "settings_router",
     "audit_router",
+    "evaluation_router",
 ]
 
 

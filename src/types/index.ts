@@ -226,5 +226,7 @@ export type ActivityView =
   | 'docker'
   | 'evaluation'
   | 'memory'
+  | 'deployment'
   | 'settings';
+
 

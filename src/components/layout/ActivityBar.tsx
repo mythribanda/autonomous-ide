@@ -21,6 +21,7 @@ import {
   GraduationCap,
   Brain,
   Container,
+  Cloud,
   LucideIcon
 } from 'lucide-react';
 import { GithubIcon } from '../GitHub';
@@ -37,10 +38,10 @@ interface NavItem {
 
 export const ActivityBar: React.FC = () => {
   const { activeView, setActiveView, toggleAgentPanel, isAgentPanelOpen } = useUIStore();
-  const { openSettings } = useSettingsStore();
+  const { openSettings, settings } = useSettingsStore();
   const { toggleOpen: toggleTerminal, isOpen: isTerminalOpen } = useTerminalStore();
 
-  const navItems: NavItem[] = [
+  const allNavItems: NavItem[] = [
     { id: 'dashboard', label: 'Project Dashboard', icon: LayoutDashboard },
     { id: 'home', label: 'Welcome', icon: Home },
     { id: 'explorer', label: 'Explorer', icon: FolderTree },
@@ -71,6 +72,7 @@ export const ActivityBar: React.FC = () => {
     { id: 'docker', label: 'Docker & Containers', icon: Container },
     { id: 'evaluation', label: 'Research & Evaluation', icon: GraduationCap },
     { id: 'memory', label: 'Project Memory & Knowledge', icon: Brain },
+    { id: 'deployment', label: 'Cloud Deployment', icon: Cloud },
     {
       id: 'settings',
       label: 'Settings',
@@ -80,6 +82,7 @@ export const ActivityBar: React.FC = () => {
     }
   ];
 
+  const navItems = allNavItems.filter((i) => i.id !== 'evaluation' || settings.researchMode);
   const topItems = navItems.filter((i) => !i.isBottom);
   const bottomItems = navItems.filter((i) => i.isBottom);
 

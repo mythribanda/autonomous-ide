@@ -8,10 +8,12 @@ from backend.config import settings
 db_file_path = Path(settings.db_path)
 db_file_path.parent.mkdir(parents=True, exist_ok=True)
 
-# Async SQLite Engine
+# Async SQLite Engine with connection pooling (pool_size=10)
 engine = create_async_engine(
     settings.database_url,
     echo=False,
+    pool_size=10,
+    max_overflow=20,
     connect_args={"check_same_thread": False}
 )
 

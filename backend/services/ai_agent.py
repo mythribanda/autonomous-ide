@@ -36,6 +36,9 @@ from backend.services.agent_tools import execute_tool
 from backend.services.verification import VerificationService
 from backend.services.knowledge_graph import project_memory
 from backend.services.model_provider import model_router
+from backend.services.browser_agent import browser_agent
+from backend.services.self_healing import self_healing_service
+from backend.services.structured_logger import log_agent_action
 
 logger = logging.getLogger(__name__)
 
@@ -291,6 +294,8 @@ class AutonomousAgent:
                 "tool_args": step.tool_args
             })
 
+            step_start_perf = time.perf_counter()
+
             # Execute tool
             tool_call = ToolCall(tool_name=step.tool, args=step.tool_args)
             result = await execute_tool(tool_call, workspace_path=workspace_path, permissions=perms)
@@ -333,6 +338,15 @@ class AutonomousAgent:
                 step.status = "done"
                 step.result = result
                 out_summary = (str(result.output)[:200] + "...") if len(str(result.output)) > 200 else str(result.output)
+
+                step_duration_ms = (time.perf_counter() - step_start_perf) * 1000.0
+                log_agent_action(
+                    task_id=state.task_id,
+                    action=step.tool,
+                    duration_ms=step_duration_ms,
+                    success=True,
+                    metadata={"step_id": step.step_id, "description": step.description}
+                )
 
                 # Track file modifications
                 if step.tool in ("write_file", "create_file", "delete_file"):
@@ -379,42 +393,53 @@ class AutonomousAgent:
                     except Exception:
                         pass
 
-                # Call Ollama for diagnosis & repair plan
+                # 1. Check known Self-Healing Patterns BEFORE calling LLM
+                known_pattern = await self_healing_service.find_known_pattern(
+                    error=str(result.error),
+                    project_id=state.project_id
+                )
+
                 diagnosis = "Operation failed unexpectedly."
                 repair_action = "Re-attempting operation"
                 repair_tool: Optional[str] = None
                 repair_args: Dict[str, Any] = {}
 
-                try:
-                    diag_system = "You are debugging an autonomous agent error. Return JSON diagnosis."
-                    diag_user = (
-                        f"Failed Tool: {step.tool}\n"
-                        f"Tool Args: {json.dumps(step.tool_args)}\n"
-                        f"Error: {result.error}\n"
-                        f"File Context (if any):\n{file_content_snippet}\n\n"
-                        f"Provide a diagnosis and repair action. Return valid JSON:\n"
-                        f"{{\n"
-                        f"  \"diagnosis\": \"<why it failed>\",\n"
-                        f"  \"repair_action\": \"<what will resolve it>\",\n"
-                        f"  \"repair_tool\": \"<tool name to run before retrying, e.g. write_file, create_file, run_command>\",\n"
-                        f"  \"repair_args\": {{<arguments for repair_tool>}}\n"
-                        f"}}"
-                    )
+                if known_pattern and known_pattern.success_count > 0 and known_pattern.successful_repair:
+                    diagnosis = f"[Self-Healing Cache] {known_pattern.diagnosis}"
+                    repair_action = known_pattern.successful_repair
+                    logger.info(f"Applying cached self-healing repair: {repair_action}")
+                else:
+                    # Call Ollama / ModelRouter for diagnosis & repair plan
+                    try:
+                        diag_system = "You are debugging an autonomous agent error. Return JSON diagnosis."
+                        diag_user = (
+                            f"Failed Tool: {step.tool}\n"
+                            f"Tool Args: {json.dumps(step.tool_args)}\n"
+                            f"Error: {result.error}\n"
+                            f"File Context (if any):\n{file_content_snippet}\n\n"
+                            f"Provide a diagnosis and repair action. Return valid JSON:\n"
+                            f"{{\n"
+                            f"  \"diagnosis\": \"<why it failed>\",\n"
+                            f"  \"repair_action\": \"<what will resolve it>\",\n"
+                            f"  \"repair_tool\": \"<tool name to run before retrying, e.g. write_file, create_file, run_command>\",\n"
+                            f"  \"repair_args\": {{<arguments for repair_tool>}}\n"
+                            f"}}"
+                        )
 
-                    diag_resp = await model_router.complete(
-                        role="diagnosis",
-                        system=diag_system,
-                        user=diag_user,
-                        temperature=0.1,
-                        project_config=model_cfg
-                    )
-                    parsed_diag = self._clean_and_parse_json(diag_resp.content)
-                    diagnosis = parsed_diag.get("diagnosis", diagnosis)
-                    repair_action = parsed_diag.get("repair_action", repair_action)
-                    repair_tool = parsed_diag.get("repair_tool")
-                    repair_args = parsed_diag.get("repair_args", {})
-                except Exception as e:
-                    logger.warning(f"Ollama diagnosis failed ({e}), using default retry strategy.")
+                        diag_resp = await model_router.complete(
+                            role="diagnosis",
+                            system=diag_system,
+                            user=diag_user,
+                            temperature=0.1,
+                            project_config=model_cfg
+                        )
+                        parsed_diag = self._clean_and_parse_json(diag_resp.content)
+                        diagnosis = parsed_diag.get("diagnosis", diagnosis)
+                        repair_action = parsed_diag.get("repair_action", repair_action)
+                        repair_tool = parsed_diag.get("repair_tool")
+                        repair_args = parsed_diag.get("repair_args", {})
+                    except Exception as e:
+                        logger.warning(f"Ollama diagnosis failed ({e}), using default retry strategy.")
 
                 await event_emitter("recovery_diagnosis", f"Diagnosis: {diagnosis}", {
                     "type": "recovery_diagnosis",
@@ -432,6 +457,15 @@ class AutonomousAgent:
 
                 # Re-execute original failed step
                 retry_result = await execute_tool(tool_call, workspace_path=workspace_path, permissions=perms)
+
+                # Record learning into SelfHealingService
+                await self_healing_service.learn_from_recovery(
+                    error=str(result.error),
+                    diagnosis=diagnosis,
+                    repair=repair_action,
+                    success=retry_result.success,
+                    project_id=state.project_id
+                )
 
                 if retry_result.success:
                     step_recovered = True
@@ -463,6 +497,15 @@ class AutonomousAgent:
                     except Exception as ex_bf:
                         logger.warning(f"Could not store bug fix memory: {ex_bf}")
 
+                    step_duration_ms = (time.perf_counter() - step_start_perf) * 1000.0
+                    log_agent_action(
+                        task_id=state.task_id,
+                        action=f"{step.tool}:recovered",
+                        duration_ms=step_duration_ms,
+                        success=True,
+                        metadata={"step_id": step.step_id, "recovery_attempts": state.error_count}
+                    )
+
                     state.status = AgentStatus.EXECUTING
                     break
                 else:
@@ -479,6 +522,16 @@ class AutonomousAgent:
                 step.status = "failed"
                 step.result = result
                 state.status = AgentStatus.FAILED
+
+                step_duration_ms = (time.perf_counter() - step_start_perf) * 1000.0
+                log_agent_action(
+                    task_id=state.task_id,
+                    action=step.tool,
+                    duration_ms=step_duration_ms,
+                    success=False,
+                    metadata={"step_id": step.step_id, "error": str(result.error)}
+                )
+
                 await event_emitter("step_failed", f"Max recovery attempts ({MAX_RECOVERY_ATTEMPTS}) reached for {step.step_id}", {
                     "type": "step_failed",
                     "step_id": step.step_id,
@@ -502,6 +555,47 @@ class AutonomousAgent:
         })
 
         verification_report = await VerificationService.verify(state, workspace_path=workspace_path)
+
+        # Optional Phase 4b — Browser UI Verification (Playwright)
+        # Triggered if project has web frontend and criteria/intent mention UI interaction
+        is_web_project = any(
+            Path(workspace_path, f).exists()
+            for f in ["package.json", "index.html", "vite.config.ts", "vite.config.js"]
+        )
+        spec_text = (
+            f"{state.compiled_spec.intent} "
+            f"{' '.join(state.compiled_spec.acceptance_criteria)} "
+            f"{state.compiled_spec.raw_requirement}"
+        ).lower()
+        has_ui_mentions = any(k in spec_text for k in ["ui", "button", "form", "page", "screen", "modal", "view", "input", "click", "browser"])
+
+        if is_web_project and has_ui_mentions and verification_report.passed:
+            try:
+                await event_emitter("ui_verification_phase", "Starting automated browser UI verification", {
+                    "type": "ui_verification_phase"
+                })
+                app_res = await browser_agent.start_app_for_testing(workspace_path)
+                try:
+                    ui_steps = await browser_agent.generate_ui_tests(
+                        requirement=state.compiled_spec.raw_requirement,
+                        acceptance_criteria=state.compiled_spec.acceptance_criteria,
+                        app_url=app_res.url
+                    )
+                    ui_result = await browser_agent.verify_ui(
+                        app_url=app_res.url,
+                        test_steps=ui_steps,
+                        task_id=state.task_id,
+                        event_emitter=event_emitter,
+                        headless=True
+                    )
+                    verification_report.ui_verification = ui_result
+                    if not ui_result.overall_passed:
+                        logger.info("UI verification had some step failures.")
+                finally:
+                    browser_agent.stop_app(app_res.process_pid)
+            except Exception as e_ui:
+                logger.warning(f"Browser UI verification encountered an issue: {e_ui}")
+
         await event_emitter("verification_run", verification_report.summary, {
             "type": "verification_run",
             "passed": verification_report.passed,
@@ -564,6 +658,7 @@ class AIAgentManager:
         self.paused_tasks: Set[str] = set()
         self.cancelled_tasks: Set[str] = set()
         self.verification_reports: Dict[str, VerificationReport] = {}
+        self.ui_verifications: Dict[str, Any] = {}
 
         # WebSocket subscriptions
         self.task_subscribers: Dict[str, Set[WebSocket]] = defaultdict(set)
@@ -576,6 +671,14 @@ class AIAgentManager:
 
     def set_verification_report(self, task_id: str, report: VerificationReport):
         self.verification_reports[task_id] = report
+        if report and report.ui_verification:
+            self.ui_verifications[task_id] = report.ui_verification
+
+    def get_ui_verification(self, task_id: str) -> Optional[Any]:
+        return self.ui_verifications.get(task_id)
+
+    def set_ui_verification(self, task_id: str, result: Any):
+        self.ui_verifications[task_id] = result
 
     async def register_subscriber(self, websocket: WebSocket, task_id: Optional[str] = None):
         if task_id:

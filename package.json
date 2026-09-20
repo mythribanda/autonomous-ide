@@ -8,7 +8,10 @@
     "dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
     "build": "tsc && vite build && electron-builder",
     "start:backend": "uvicorn backend.main:app --reload --port 8000",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "package:mac": "electron-builder --mac",
+    "package:win": "electron-builder --win",
+    "package:linux": "electron-builder --linux"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
@@ -36,44 +39,24 @@
     "wait-on": "^9.1.0"
   },
   "build": {
-    "appId": "com.autonomous.ide",
-    "productName": "AutonomousDev",
+    "appId": "com.autonomous-ide.app",
+    "productName": "Autonomous IDE",
     "directories": {
-      "output": "dist-electron"
+      "output": "dist"
     },
     "files": [
       "dist/**/*",
       "electron/**/*",
-      "package.json"
+      "backend/**/*"
     ],
-    "extraResources": [
-      {
-        "from": "backend",
-        "to": "backend",
-        "filter": [
-          "**/*"
-        ]
-      }
-    ],
-    "win": {
-      "target": [
-        "nsis",
-        "portable"
-      ]
-    },
     "mac": {
-      "target": [
-        "dmg",
-        "zip"
-      ],
       "category": "public.app-category.developer-tools"
     },
+    "win": {
+      "target": "nsis"
+    },
     "linux": {
-      "target": [
-        "AppImage",
-        "deb"
-      ],
-      "category": "Development"
+      "target": "AppImage"
     }
   }
 }

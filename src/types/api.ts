@@ -864,3 +864,89 @@ export interface ContainerInfo {
   ports: Record<string, string>;
   created: string;
 }
+
+export interface UITestStep {
+  action: 'navigate' | 'click' | 'fill' | 'wait' | 'screenshot' | 'assert_text' | 'assert_visible';
+  target?: string | null;
+  value?: string | null;
+  description: string;
+}
+
+export interface ScreenshotResult {
+  step_index: number;
+  action: string;
+  description: string;
+  screenshot_base64: string;
+  passed: boolean;
+  error?: string | null;
+}
+
+export interface UIVerificationResult {
+  steps_passed: number;
+  steps_failed: number;
+  screenshots: ScreenshotResult[];
+  errors: string[];
+  overall_passed: boolean;
+  app_url?: string | null;
+}
+
+export interface VerifyUIRequest {
+  app_url?: string | null;
+  headless?: boolean;
+  test_steps?: UITestStep[];
+}
+
+export interface DeploymentConfig {
+  has_vercel: boolean;
+  has_fly: boolean;
+  has_railway: boolean;
+  has_procfile: boolean;
+  has_render: boolean;
+  detected_provider?: string | null;
+  config_files_found: string[];
+  suggested_provider: string;
+}
+
+export interface DeployResult {
+  url?: string | null;
+  deploy_id?: string | null;
+  success: boolean;
+  error?: string | null;
+  provider: string;
+  logs?: string | null;
+  timestamp: string;
+}
+
+export interface DeployVerificationResult {
+  accessible: boolean;
+  response_time_ms: number;
+  status_code: number;
+  url: string;
+  error?: string | null;
+}
+
+export interface BenchmarkModeMetrics {
+  mode: string;
+  completion_rate: number;
+  avg_time_seconds: number;
+  recovery_attempts: number;
+  model_calls: number;
+  status: string;
+}
+
+export interface BenchmarkResult {
+  benchmark_id: string;
+  task: string;
+  modes: string[];
+  results: Record<string, BenchmarkModeMetrics>;
+  summary: string;
+  timestamp: string;
+}
+
+export interface BenchmarkRequest {
+  task: string;
+  modes?: string[];
+}
+
+
+

@@ -17,6 +17,8 @@ from backend.schemas import (
     KnowledgeGraphResult,
     FileContext,
 )
+from backend.services.ast_analyzer import ast_analyzer
+from backend.services.cache_service import cache_service
 
 STOP_WORDS = {
     "a", "about", "above", "after", "again", "against", "all", "am", "an", "and", "any", "are",
@@ -533,8 +535,83 @@ class KnowledgeGraph:
 
         return " ".join([s1, s2, s3, s4, s5, s6, s7, s8])
 
+    async def update_for_files(
+        self,
+        project_id: str,
+        changed_files: List[str],
+        graph: KnowledgeGraphResult,
+        project_path: Optional[str] = None
+    ) -> KnowledgeGraphResult:
+        """
+        Incrementally updates the KnowledgeGraph by re-analyzing ONLY changed files,
+        removing obsolete nodes and edges, adding new symbols, and returning the updated graph.
+        """
+        proj_root = Path(project_path).resolve() if project_path else Path(".").resolve()
+        norm_changed = set()
+        for f in changed_files:
+            rel = self._norm_path(f, proj_root)
+            norm_changed.add(rel)
+
+        # 1. Filter out stale nodes and edges associated with the changed files
+        remaining_nodes = [
+            n for n in graph.nodes
+            if self._norm_path(n.file_path, proj_root) not in norm_changed
+            and not any(n.id.startswith(f"{cf}::") or n.id == cf for cf in norm_changed)
+        ]
+
+        # Keep edges where neither source nor target is a stale node
+        stale_node_ids = {
+            n.id for n in graph.nodes
+            if self._norm_path(n.file_path, proj_root) in norm_changed
+            or any(n.id.startswith(f"{cf}::") or n.id == cf for cf in norm_changed)
+        }
+        remaining_edges = [
+            e for e in graph.edges
+            if e.source not in stale_node_ids and e.target not in stale_node_ids
+        ]
+
+        # 2. Re-analyze changed files using ast_analyzer
+        new_analyses: Dict[str, FileAnalysis] = {}
+        for cf in changed_files:
+            full_p = proj_root / cf if not Path(cf).is_absolute() else Path(cf)
+            if full_p.exists() and full_p.is_file():
+                try:
+                    fa = ast_analyzer.analyze_file(str(full_p))
+                    rel_p = self._norm_path(str(full_p), proj_root)
+                    new_analyses[rel_p] = fa
+                except Exception:
+                    pass
+
+        # 3. Build sub-graph for updated files
+        if new_analyses:
+            sub_graph = self.build_graph(new_analyses, proj_root=proj_root)
+            # Merge nodes & edges without duplicate IDs
+            existing_node_ids = {n.id for n in remaining_nodes}
+            for n in sub_graph.nodes:
+                if n.id not in existing_node_ids:
+                    remaining_nodes.append(n)
+                    existing_node_ids.add(n.id)
+
+            existing_edge_keys = {(e.source, e.target, e.type) for e in remaining_edges}
+            for e in sub_graph.edges:
+                edge_key = (e.source, e.target, e.type)
+                if edge_key not in existing_edge_keys:
+                    remaining_edges.append(e)
+                    existing_edge_keys.add(edge_key)
+
+        updated_graph = KnowledgeGraphResult(
+            nodes=remaining_nodes,
+            edges=remaining_edges,
+            total_nodes=len(remaining_nodes),
+            total_edges=len(remaining_edges),
+            summary=graph.summary
+        )
+        cache_service.set_knowledge_graph(project_id, updated_graph)
+        return updated_graph
+
 
 knowledge_graph = KnowledgeGraph()
+
 
 
 class ProjectMemory:

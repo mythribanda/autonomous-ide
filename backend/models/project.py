@@ -92,3 +92,19 @@ class AuditLog(Base):
     user_initiated: Mapped[bool] = mapped_column(Boolean, default=False)
 
     project: Mapped["Project"] = relationship("Project", back_populates="audit_logs")
+
+
+class HealingPattern(Base):
+    __tablename__ = "healing_patterns"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuid)
+    project_id: Mapped[str] = mapped_column(String(36), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    error_pattern: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    diagnosis: Mapped[str] = mapped_column(Text, nullable=False)
+    successful_repair: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    failed_repair: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    occurrence_count: Mapped[int] = mapped_column(Integer, default=1)
+    success_count: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, onupdate=utc_now)
+

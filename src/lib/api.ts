@@ -66,7 +66,16 @@ import {
   GenerateComposeResponse,
   BuildResult,
   ContainerResult,
-  ContainerInfo
+  ContainerInfo,
+  UITestStep,
+  ScreenshotResult,
+  UIVerificationResult,
+  VerifyUIRequest,
+  DeploymentConfig,
+  DeployResult,
+  DeployVerificationResult,
+  BenchmarkResult,
+  BenchmarkRequest
 } from '../types/api';
 import { PromptSpecification } from '../types';
 
@@ -869,4 +878,101 @@ export const getAuditLog = async (
   if (!res.ok) throw new Error(`Audit log fetch failed: ${res.status}`);
   return res.json();
 };
+
+// ─── Playwright Browser UI Verification ──────────────────────────────────────
+
+export const verifyAgentUI = async (
+  taskId: string,
+  req: VerifyUIRequest = {}
+): Promise<UIVerificationResult> => {
+  return request<UIVerificationResult>(`/agent/${taskId}/verify-ui`, {
+    method: 'POST',
+    body: JSON.stringify(req)
+  });
+};
+
+export const getUIVerification = async (
+  taskId: string
+): Promise<UIVerificationResult> => {
+  return request<UIVerificationResult>(`/agent/${taskId}/ui-verification`, {
+    method: 'GET'
+  });
+};
+
+// ─── Cloud Deployment ────────────────────────────────────────────────────────
+
+export const getDeploymentConfig = async (
+  projectId: string
+): Promise<DeploymentConfig> => {
+  return request<DeploymentConfig>(`/projects/${projectId}/deployment/config`);
+};
+
+export const generateDeploymentConfig = async (
+  projectId: string,
+  provider: string
+): Promise<{ provider: string; content: string; success: boolean }> => {
+  return request(`/projects/${projectId}/deployment/generate`, {
+    method: 'POST',
+    body: JSON.stringify({ provider })
+  });
+};
+
+export const deployProject = async (
+  projectId: string,
+  provider: string
+): Promise<DeployResult> => {
+  return request<DeployResult>(`/projects/${projectId}/deployment/deploy`, {
+    method: 'POST',
+    body: JSON.stringify({ provider })
+  });
+};
+
+export const getDeploymentStatus = async (
+  projectId: string
+): Promise<{ last_deployment: DeployResult | null; history: DeployResult[] }> => {
+  return request(`/projects/${projectId}/deployment/status`);
+};
+
+export const verifyDeployment = async (
+  projectId: string,
+  url: string
+): Promise<DeployVerificationResult> => {
+  return request<DeployVerificationResult>(`/projects/${projectId}/deployment/verify`, {
+    method: 'POST',
+    body: JSON.stringify({ url })
+  });
+};
+
+// ─── Research & Academic Evaluation ──────────────────────────────────────────
+
+export const runBenchmark = async (
+  task: string,
+  modes: string[] = ['guided', 'autonomous']
+): Promise<BenchmarkResult> => {
+  return request<BenchmarkResult>('/evaluation/benchmark', {
+    method: 'POST',
+    body: JSON.stringify({ task, modes })
+  });
+};
+
+export const getBenchmark = async (
+  benchmarkId: string
+): Promise<BenchmarkResult> => {
+  return request<BenchmarkResult>(`/evaluation/benchmark/${benchmarkId}`);
+};
+
+export const exportLatexTables = async (
+  projectId?: string
+): Promise<{ latex: string; project_id: string }> => {
+  return request(`/evaluation/export/latex${projectId ? `?project_id=${projectId}` : ''}`);
+};
+
+export const exportComparisonTable = async (
+  projectId?: string
+): Promise<{ markdown: string }> => {
+  return request(`/evaluation/export/comparison${projectId ? `?project_id=${projectId}` : ''}`);
+};
+
+
+
 

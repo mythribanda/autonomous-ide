@@ -23,16 +23,54 @@ from backend.routers import (
     docker_router,
     settings_router,
     audit_router,
+    evaluation_router,
 )
 from backend.routers.terminal import handle_terminal_ws
 from backend.routers.github import handle_clone_ws
 from backend.routers.docker import handle_docker_build_ws
 
 
+import logging
+from pathlib import Path
+import httpx
+
+logger = logging.getLogger("autonomous_dev.main")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: Run database migrations / table creation
-    await init_db()
+    # 1. Create data/ and logs/ directories if missing
+    data_dir = Path("data").resolve()
+    data_dir.mkdir(parents=True, exist_ok=True)
+    logs_dir = Path("backend/logs").resolve()
+    logs_dir.mkdir(parents=True, exist_ok=True)
+
+    # 2. Run database migrations / schema creation
+    try:
+        await init_db()
+        logger.info("Database schema initialized successfully.")
+    except Exception as e:
+        logger.error(f"Database initialization error: {e}")
+
+    # 3. Check if Ollama is running -> log warning if not (don't crash)
+    ollama_url = f"{settings.ollama_url.rstrip('/')}/api/tags"
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            resp = await client.get(ollama_url)
+            if resp.status_code == 200:
+                logger.info(f"Ollama connected successfully at {settings.ollama_url}")
+            else:
+                logger.warning(f"Ollama returned HTTP {resp.status_code} at {settings.ollama_url}")
+    except Exception as e:
+        logger.warning(
+            f"WARNING: Ollama is not reachable at {settings.ollama_url} ({e}). "
+            f"Start Ollama with 'ollama serve' or pull models with 'ollama pull {settings.ollama_model}'."
+        )
+
+    # 4. Print startup URL to console
+    print("Backend ready at http://localhost:8000")
+    logger.info("Backend ready at http://localhost:8000")
+
     yield
     # Shutdown logic if any
 
@@ -108,6 +146,7 @@ app.include_router(github_router, prefix="/api")
 app.include_router(docker_router, prefix="/api")
 app.include_router(settings_router, prefix="/api")
 app.include_router(audit_router, prefix="/api")
+app.include_router(evaluation_router, prefix="/api")
 
 # WebSocket endpoint streaming agent events to frontend per task
 @app.websocket("/ws/agent/{task_id}")

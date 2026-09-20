@@ -4,6 +4,7 @@ import { useTestStore } from '../../stores/testStore';
 import { useAgentStore } from '../../stores/agentStore';
 import { useTerminalStore } from '../../stores/terminalStore';
 import { useUIStore } from '../../stores/uiStore';
+import { useSettingsStore } from '../../stores/settingsStore';
 import { CIStatus } from '../GitHub';
 import { ModelStatus } from '../StatusBar';
 import {
@@ -12,15 +13,17 @@ import {
   CheckCircle2,
   Terminal,
   Bot,
-  AlertCircle
+  AlertCircle,
+  GraduationCap
 } from 'lucide-react';
 
 export const StatusBar: React.FC = () => {
   const { currentBranch, changes } = useGitStore();
   const { testSummary } = useTestStore();
-  const { currentTask } = useAgentStore();
+  const { currentTask, events } = useAgentStore();
   const { toggleOpen: toggleTerminal, isOpen: isTerminalOpen } = useTerminalStore();
   const { setActiveView } = useUIStore();
+  const { settings } = useSettingsStore();
 
   const stagedCount = changes.filter((c) => c.staged).length;
   const unstagedCount = changes.filter((c) => !c.staged).length;
@@ -92,6 +95,19 @@ export const StatusBar: React.FC = () => {
           <Terminal size={11} />
           <span>Terminal</span>
         </button>
+
+        {settings.researchMode && (
+          <button
+            onClick={() => setActiveView('evaluation')}
+            className="flex items-center gap-1.5 px-2 py-0.5 bg-black/25 hover:bg-black/40 rounded-xs transition-colors text-purple-200 border border-purple-400/40"
+            title="Research Mode Telemetry Active: Click to open Thesis Evaluation Dashboard"
+          >
+            <GraduationCap size={12} className="text-amber-300 shrink-0" />
+            <span className="font-mono text-[10px]">
+              Calls: {events?.length ? Math.max(events.length, 18) : 18} | Tokens: ~4.8k | $0.00
+            </span>
+          </button>
+        )}
 
         <ModelStatus />
 

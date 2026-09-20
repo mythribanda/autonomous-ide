@@ -36,6 +36,12 @@ from backend.schemas import (
     RepoStats,
     ProjectHealthStats,
     HealthCheckItem,
+    DeploymentConfig,
+    DeployResult,
+    DeployVerificationResult,
+    GenerateDeploymentConfigRequest,
+    DeployRequest,
+    VerifyDeploymentRequest,
 )
 from backend.services.project_scanner import ProjectScanner, EXTENSION_MAP
 from backend.services.ast_analyzer import ast_analyzer
@@ -44,6 +50,8 @@ from backend.services.impact_analyzer import impact_analyzer
 from backend.services.permission_service import permission_service
 from backend.services.git_service import git_service
 from backend.services.security_scanner import security_scanner, SecretScanResult, DependencyScanResult
+from backend.services.deployment_service import deployment_service
+from backend.services.cache_service import cache_service
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
@@ -179,6 +187,10 @@ async def open_project(req: ProjectOpenRequest, db: AsyncSession = Depends(get_d
     await db.commit()
     await db.refresh(project)
 
+    # Invalidate stale cache on project re-open & populate scan cache
+    cache_service.invalidate_project(project.id)
+    cache_service.set_project_scan(project.id, scan_result)
+
     resp = _to_project_response(project)
     resp.scan_result = scan_result
     return resp
@@ -205,6 +217,11 @@ async def get_project(project_id: str, db: AsyncSession = Depends(get_db)):
 
 @router.get("/{project_id}/scan", response_model=ProjectScanResult)
 async def get_project_scan(project_id: str, db: AsyncSession = Depends(get_db)):
+    # 1. Check in-memory TTL response cache first
+    cached_scan = cache_service.get_project_scan(project_id)
+    if cached_scan:
+        return cached_scan
+
     stmt = select(Project).where(Project.id == project_id)
     result = await db.execute(stmt)
     project = result.scalars().first()
@@ -215,10 +232,12 @@ async def get_project_scan(project_id: str, db: AsyncSession = Depends(get_db)):
             detail=f"Project not found with id: {project_id}"
         )
 
-    # Return cached scan if available
+    # Return cached scan from DB if available and update in-memory cache
     if project.config_json:
         try:
-            return ProjectScanResult.model_validate_json(project.config_json)
+            scan = ProjectScanResult.model_validate_json(project.config_json)
+            cache_service.set_project_scan(project_id, scan)
+            return scan
         except Exception:
             pass
 
@@ -227,6 +246,7 @@ async def get_project_scan(project_id: str, db: AsyncSession = Depends(get_db)):
     scan_result = await scanner.scan(project.path)
     project.config_json = scan_result.model_dump_json()
     await db.commit()
+    cache_service.set_project_scan(project_id, scan_result)
     return scan_result
 
 @router.post("/{project_id}/analyze", response_model=AnalysisJobResponse)
@@ -412,10 +432,17 @@ async def _build_and_store_knowledge_graph(project: Project, db: AsyncSession, r
     db.add(kg_entry)
     await db.commit()
 
+    # Cache knowledge graph in memory
+    cache_service.set_knowledge_graph(project.id, kg_result)
     return kg_result
 
 
 async def _get_or_build_knowledge_graph(project: Project, db: AsyncSession) -> KnowledgeGraphResult:
+    # 1. Check in-memory TTL response cache first
+    cached_kg = cache_service.get_knowledge_graph(project.id)
+    if cached_kg is not None:
+        return cached_kg
+
     mem_stmt = (
         select(AgentMemory)
         .where(
@@ -431,7 +458,9 @@ async def _get_or_build_knowledge_graph(project: Project, db: AsyncSession) -> K
         try:
             parsed = json.loads(m.content)
             if isinstance(parsed, dict) and parsed.get("__knowledge_graph__") and "data" in parsed:
-                return KnowledgeGraphResult.model_validate(parsed["data"])
+                kg = KnowledgeGraphResult.model_validate(parsed["data"])
+                cache_service.set_knowledge_graph(project.id, kg)
+                return kg
         except Exception:
             pass
 
@@ -1165,6 +1194,127 @@ async def run_full_security_scan(
         secrets=secrets_res,
         dependencies=deps_res
     )
+
+
+# ==============================================================================
+# Deployment Endpoints
+# ==============================================================================
+
+@router.get("/{project_id}/deployment/config", response_model=DeploymentConfig)
+async def get_deployment_config(
+    project_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """Detects existing deployment configuration in the project."""
+    stmt = select(Project).where(Project.id == project_id)
+    res = await db.execute(stmt)
+    project = res.scalars().first()
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Project not found with id: {project_id}"
+        )
+
+    return deployment_service.detect_deployment_config(project.path)
+
+
+@router.post("/{project_id}/deployment/generate")
+async def generate_deployment_config(
+    project_id: str,
+    body: GenerateDeploymentConfigRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """Generates provider configuration file (vercel.json, fly.toml, railway.json)."""
+    stmt = select(Project).where(Project.id == project_id)
+    res = await db.execute(stmt)
+    project = res.scalars().first()
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Project not found with id: {project_id}"
+        )
+
+    scan_res: Optional[ProjectScanResult] = None
+    if project.config_json:
+        try:
+            scan_res = ProjectScanResult.model_validate_json(project.config_json)
+        except Exception:
+            pass
+
+    content = await deployment_service.generate_deployment_config(
+        provider=body.provider,
+        project_path=project.path,
+        scan_result=scan_res
+    )
+
+    return {
+        "provider": body.provider,
+        "content": content,
+        "success": True
+    }
+
+
+@router.post("/{project_id}/deployment/deploy", response_model=DeployResult)
+async def deploy_project(
+    project_id: str,
+    body: DeployRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """Executes production deployment to chosen provider (Vercel, Fly.io, Railway)."""
+    stmt = select(Project).where(Project.id == project_id)
+    res = await db.execute(stmt)
+    project = res.scalars().first()
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Project not found with id: {project_id}"
+        )
+
+    prov = body.provider.lower()
+    if prov == "fly":
+        result = await deployment_service.deploy_to_fly(project.path, project.name)
+    elif prov == "railway":
+        result = await deployment_service.deploy_to_railway(project.path, project.name)
+    else:
+        result = await deployment_service.deploy_to_vercel(project.path, project.name)
+
+    deployment_service.record_deployment(project_id, result)
+    return result
+
+
+@router.get("/{project_id}/deployment/status")
+async def get_deployment_status(
+    project_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """Returns last deployment status and deployment history for the project."""
+    stmt = select(Project).where(Project.id == project_id)
+    res = await db.execute(stmt)
+    project = res.scalars().first()
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Project not found with id: {project_id}"
+        )
+
+    last = deployment_service.get_last_status(project_id)
+    history = deployment_service.get_history(project_id)
+
+    return {
+        "last_deployment": last,
+        "history": history
+    }
+
+
+@router.post("/{project_id}/deployment/verify", response_model=DeployVerificationResult)
+async def verify_deployment_endpoint(
+    project_id: str,
+    body: VerifyDeploymentRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """Verifies deployment availability and measures response latency."""
+    return await deployment_service.verify_deployment(body.url)
+
 
 
 

@@ -1,12 +1,14 @@
 import os
 import json
 import asyncio
+import time
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Set, Tuple
 from collections import Counter
 
 from backend.schemas import ProjectScanResult
 from backend.services.docker_service import docker_service
+from backend.services.cache_service import cache_service
 
 # Directories to skip entirely during scan
 IGNORED_DIRS: Set[str] = {
@@ -486,3 +488,109 @@ def scan_project_metadata(project_path: str) -> Dict[str, Optional[str]]:
         "language": res.languages[0] if res.languages else "Unknown",
         "framework": res.frameworks[0] if res.frameworks else "Standard"
     }
+
+
+# ==============================================================================
+# Watchdog File Watcher for Incremental Knowledge Graph Updates
+# ==============================================================================
+
+try:
+    from watchdog.observers import Observer
+    from watchdog.events import FileSystemEventHandler
+    HAS_WATCHDOG = True
+except ImportError:
+    HAS_WATCHDOG = False
+
+
+class ProjectChangeHandler(FileSystemEventHandler if HAS_WATCHDOG else object):
+    """
+    Batches filesystem changes and triggers throttled incremental KnowledgeGraph updates.
+    """
+
+    def __init__(self, project_id: str, project_path: str, on_change_callback: Optional[Any] = None):
+        if HAS_WATCHDOG:
+            super().__init__()
+        self.project_id = project_id
+        self.project_path = Path(project_path).resolve()
+        self.on_change_callback = on_change_callback
+        self.changed_files: Set[str] = set()
+        self.last_update_time: float = 0.0
+        self._lock = asyncio.Lock() if hasattr(asyncio, "Lock") else None
+
+    def _should_ignore(self, file_path: str) -> bool:
+        p = Path(file_path)
+        for part in p.parts:
+            if part in IGNORED_DIRS or part.startswith("."):
+                return True
+        ext = p.suffix.lower()
+        return ext not in EXTENSION_MAP and ext not in [".json", ".md", ".sql", ".env"]
+
+    def on_modified(self, event):
+        if not event.is_directory and not self._should_ignore(event.src_path):
+            self._record_change(event.src_path)
+
+    def on_created(self, event):
+        if not event.is_directory and not self._should_ignore(event.src_path):
+            self._record_change(event.src_path)
+
+    def on_deleted(self, event):
+        if not event.is_directory and not self._should_ignore(event.src_path):
+            self._record_change(event.src_path)
+
+    def _record_change(self, file_path: str):
+        try:
+            rel = Path(file_path).resolve().relative_to(self.project_path).as_posix()
+            self.changed_files.add(rel)
+        except Exception:
+            self.changed_files.add(Path(file_path).as_posix())
+
+        # Invalidate cached knowledge graph immediately on detected modification
+        cache_service.invalidate_knowledge_graph(self.project_id)
+
+        now = time.time() if "time" in globals() else 0.0
+        # Schedule / trigger throttled update if callback provided
+        if self.on_change_callback and (now - self.last_update_time >= 2.0):
+            self.last_update_time = now
+            batch = list(self.changed_files)
+            self.changed_files.clear()
+            if asyncio.iscoroutinefunction(self.on_change_callback):
+                asyncio.create_task(self.on_change_callback(self.project_id, batch, str(self.project_path)))
+            else:
+                self.on_change_callback(self.project_id, batch, str(self.project_path))
+
+
+class ProjectWatchManager:
+    """Manages active filesystem observers across projects."""
+
+    def __init__(self):
+        self.observers: Dict[str, Any] = {}
+
+    def start_watching(self, project_id: str, project_path: str, on_change_callback: Optional[Any] = None):
+        if not HAS_WATCHDOG:
+            return
+        self.stop_watching(project_id)
+        try:
+            p = Path(project_path).resolve()
+            if not p.exists() or not p.is_dir():
+                return
+            handler = ProjectChangeHandler(project_id, str(p), on_change_callback)
+            observer = Observer()
+            observer.schedule(handler, str(p), recursive=True)
+            observer.daemon = True
+            observer.start()
+            self.observers[project_id] = observer
+        except Exception as e:
+            pass
+
+    def stop_watching(self, project_id: str):
+        obs = self.observers.pop(project_id, None)
+        if obs:
+            try:
+                obs.stop()
+                obs.join(timeout=1.0)
+            except Exception:
+                pass
+
+
+project_watch_manager = ProjectWatchManager()
+

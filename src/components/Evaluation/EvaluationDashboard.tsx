@@ -22,6 +22,7 @@ import {
   Check
 } from 'lucide-react';
 import { clsx } from 'clsx';
+import { ResearchExport } from '../Research';
 
 export const EvaluationDashboard: React.FC = () => {
   const { projectId, currentProject, project } = useProjectStore();
@@ -479,6 +480,13 @@ export const EvaluationDashboard: React.FC = () => {
               </p>
             </div>
           </div>
+        </section>
+
+        {/* ═══════════════════════════════════════════════════════════════
+            ACADEMIC BENCHMARKS & THESIS ARTIFACT EXPORT
+        ═══════════════════════════════════════════════════════════════ */}
+        <section className="pt-4 border-t border-[#2B2B2B]">
+          <ResearchExport />
         </section>
       </div>
     </div>

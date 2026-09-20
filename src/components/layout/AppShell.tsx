@@ -28,6 +28,7 @@ import { EvaluationDashboard } from '../Evaluation';
 import { GitHubPanel } from '../GitHub';
 import { ProjectMemoryPanel } from '../Memory';
 import { DockerPanel } from '../Docker';
+import { DeploymentPanel } from '../Deployment';
 import { useProjectStore } from '../../store/projectStore';
 
 export const AppShell: React.FC = () => {
@@ -69,6 +70,8 @@ export const AppShell: React.FC = () => {
         return <EvaluationDashboard />;
       case 'memory':
         return <ProjectMemoryPanel />;
+      case 'deployment':
+        return <DeploymentPanel />;
       case 'explorer':
       default:
         return <EditorArea />;

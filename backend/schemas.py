@@ -383,6 +383,7 @@ class VerificationReport(BaseModel):
     files_changed_count: int = 0
     overall_success: bool = True
     summary: str = ""
+    ui_verification: Optional[Any] = None
 
     @property
     def passed(self) -> bool:
@@ -760,4 +761,86 @@ class ContainerInfo(BaseModel):
     status: str
     ports: Dict[str, str] = Field(default_factory=dict)
     created: str
+
+
+# ==============================================================================
+# UI Verification Schemas (Playwright)
+# ==============================================================================
+
+class UITestStep(BaseModel):
+    action: str  # "navigate" | "click" | "fill" | "wait" | "screenshot" | "assert_text" | "assert_visible"
+    target: Optional[str] = None  # CSS selector or URL
+    value: Optional[str] = None  # text to fill or assert
+    description: str = ""
+
+
+class ScreenshotResult(BaseModel):
+    step_index: int
+    action: str
+    description: str
+    screenshot_base64: str
+    passed: bool = True
+    error: Optional[str] = None
+
+
+class UIVerificationResult(BaseModel):
+    steps_passed: int = 0
+    steps_failed: int = 0
+    screenshots: List[ScreenshotResult] = Field(default_factory=list)
+    errors: List[str] = Field(default_factory=list)
+    overall_passed: bool = True
+    app_url: Optional[str] = None
+
+
+class VerifyUIRequest(BaseModel):
+    app_url: Optional[str] = None
+    headless: bool = True
+    test_steps: Optional[List[UITestStep]] = None
+
+
+# ==============================================================================
+# Deployment Schemas
+# ==============================================================================
+
+class DeploymentConfig(BaseModel):
+    has_vercel: bool = False
+    has_fly: bool = False
+    has_railway: bool = False
+    has_procfile: bool = False
+    has_render: bool = False
+    detected_provider: Optional[str] = None
+    config_files_found: List[str] = Field(default_factory=list)
+    suggested_provider: str = "vercel"
+
+
+class DeployResult(BaseModel):
+    url: Optional[str] = None
+    deploy_id: Optional[str] = None
+    success: bool = False
+    error: Optional[str] = None
+    provider: str = "vercel"
+    logs: Optional[str] = None
+    timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+
+class DeployVerificationResult(BaseModel):
+    accessible: bool = False
+    response_time_ms: int = 0
+    status_code: int = 0
+    url: str
+    error: Optional[str] = None
+
+
+class GenerateDeploymentConfigRequest(BaseModel):
+    provider: str = "vercel"
+
+
+class DeployRequest(BaseModel):
+    provider: str = "vercel"
+
+
+class VerifyDeploymentRequest(BaseModel):
+    url: str
+
+
 

@@ -20,12 +20,15 @@ from backend.schemas import (
     AgentStatus,
     ImpactReport,
     VerificationReport,
+    UIVerificationResult,
+    VerifyUIRequest,
 )
 from backend.services.ai_agent import agent_manager
 from backend.services.prompt_compiler import prompt_compiler
 from backend.services.knowledge_graph import knowledge_graph
 from backend.services.impact_analyzer import impact_analyzer
 from backend.services.verification import VerificationService
+from backend.services.browser_agent import browser_agent
 from backend.routers.projects import _get_or_build_knowledge_graph
 
 logger = logging.getLogger(__name__)
@@ -414,5 +417,112 @@ async def get_verification_report_by_id(task_id: str, db: AsyncSession = Depends
 
     # If no report stored, generate and store
     return await verify_agent_task(task_id, db)
+
+
+@router.post("/{task_id}/verify-ui", response_model=UIVerificationResult)
+async def verify_agent_ui(
+    task_id: str,
+    req: Optional[VerifyUIRequest] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Executes Playwright Browser UI verification on a web application.
+    Auto-starts the dev server if app_url is not provided, runs test steps, and streams events.
+    """
+    # 1. Resolve task and project
+    stmt = select(Task).where(Task.id == task_id)
+    res = await db.execute(stmt)
+    task = res.scalars().first()
+    if not task:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Task not found with id: {task_id}"
+        )
+
+    p_stmt = select(Project).where(Project.id == task.project_id)
+    p_res = await db.execute(p_stmt)
+    project = p_res.scalars().first()
+    workspace_path = project.path if project else "."
+
+    # 2. Extract requirement and acceptance criteria
+    criteria: list[str] = []
+    requirement = task.requirement
+    if task.compiled_spec_json:
+        try:
+            spec = json.loads(task.compiled_spec_json)
+            criteria = spec.get("acceptance_criteria", [])
+            requirement = spec.get("raw_requirement", requirement)
+        except Exception:
+            pass
+
+    # 3. Determine app_url and manage server process if needed
+    request_data = req or VerifyUIRequest()
+    app_url = request_data.app_url
+    started_pid: Optional[int] = None
+
+    if not app_url:
+        try:
+            app_start = await browser_agent.start_app_for_testing(workspace_path)
+            app_url = app_start.url
+            started_pid = app_start.process_pid
+        except Exception as e:
+            logger.warning(f"Could not auto-start application server: {e}")
+            app_url = "http://localhost:5173"
+
+    try:
+        # 4. Generate or use provided UI test steps
+        test_steps = request_data.test_steps
+        if not test_steps:
+            test_steps = await browser_agent.generate_ui_tests(
+                requirement=requirement,
+                acceptance_criteria=criteria,
+                app_url=app_url
+            )
+
+        # 5. Broadcast helper using agent_manager
+        async def event_emitter(event_type: str, msg: str, data: Dict[str, Any]):
+            await agent_manager.broadcast_event(task_id, {
+                "event_type": event_type,
+                "message": msg,
+                "data": data,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            })
+
+        # 6. Execute Playwright verification
+        ui_result = await browser_agent.verify_ui(
+            app_url=app_url,
+            test_steps=test_steps,
+            task_id=task_id,
+            event_emitter=event_emitter,
+            headless=request_data.headless
+        )
+
+        agent_manager.set_ui_verification(task_id, ui_result)
+        return ui_result
+
+    finally:
+        if started_pid is not None:
+            browser_agent.stop_app(started_pid)
+
+
+@router.get("/{task_id}/ui-verification", response_model=UIVerificationResult)
+async def get_ui_verification_by_id(task_id: str):
+    """
+    Returns stored UIVerificationResult with screenshots for the task.
+    """
+    result = agent_manager.get_ui_verification(task_id)
+    if result:
+        return result
+
+    # Check verification report if it has ui_verification
+    v_report = agent_manager.get_verification_report(task_id)
+    if v_report and getattr(v_report, "ui_verification", None):
+        return v_report.ui_verification
+
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail=f"No UI verification results found for task {task_id}"
+    )
+
 
 
